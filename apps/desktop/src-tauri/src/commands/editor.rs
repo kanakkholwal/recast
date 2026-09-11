@@ -33,7 +33,7 @@ use super::system::get_active_output_dir;
 use super::types::{
     AppState, CameraCapture, EditorDocument, ExportRequest, GifSettings, VideoMetadata,
 };
-use crate::project::reader::ProjectOpenResult;
+use crate::project::ProjectOpenResult;
 use crate::recording::TrackOffsets;
 #[allow(unused_imports)]
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
@@ -94,7 +94,7 @@ fn prebake_static_background(
 
 fn open_project_if_needed(path: &Path) -> Result<Option<ProjectOpenResult>, String> {
     if path.extension().and_then(|value| value.to_str()) == Some("recast") {
-        crate::project::reader::open_project(path)
+        crate::project::open_project(path)
             .map(Some)
             .map_err(|e| e.to_string())
     } else {
@@ -104,7 +104,7 @@ fn open_project_if_needed(path: &Path) -> Result<Option<ProjectOpenResult>, Stri
 
 fn project_or_media_metadata(path: &Path) -> Result<VideoMetadata, String> {
     if path.extension().and_then(|value| value.to_str()) == Some("recast") {
-        let project = crate::project::reader::open_project(path).map_err(|e| e.to_string())?;
+        let project = crate::project::open_project(path).map_err(|e| e.to_string())?;
         return Ok(VideoMetadata {
             duration: project.metadata.media_duration_secs(),
             width: project.metadata.video.width,
@@ -340,6 +340,10 @@ fn load_editor_document_blocking(
 ) -> Result<EditorDocument, String> {
     let input = PathBuf::from(&path);
     grant_opened(&input);
+    // Only the editor can answer the conversion prompt; headless gets `open_project`'s refusal.
+    if offer_upgrade && crate::project::is_archive(&input) {
+        return Ok(EditorDocument::needing_conversion(path));
+    }
     if let Some(project) = open_project_if_needed(&input)? {
         let media_duration = project.metadata.media_duration_secs();
         let default_state = || RenderState {
@@ -400,8 +404,7 @@ fn load_editor_document_blocking(
             },
             render_state: grant_named(render_state),
             format: Some(project.format),
-            needs_migration: project.needs_migration
-                || (offer_upgrade && project.format != crate::project::Format::V3),
+            needs_migration: project.needs_migration,
         });
     }
 
@@ -3866,19 +3869,6 @@ pub fn cancel_export(export_id: String, state: State<'_, AppState>) -> AppResult
     Ok(())
 }
 
-/// Crash-recovery shadow write, fired on a ~30s timer — async + spawn_blocking
-/// so the JSON serialize + atomic file write never stall the UI thread.
-#[tauri::command]
-pub async fn autosave_project(project_path: String, edits_json: String) -> AppResult<()> {
-    tauri::async_runtime::spawn_blocking(move || {
-        crate::project::autosave::save_autosave(Path::new(&project_path), &edits_json)
-            .map_err(|e| e.to_string())
-    })
-    .await
-    .map_err(|e| AppError::msg(format!("autosave task panicked: {e}")))?
-    .map_err(Into::into)
-}
-
 /// Packs a project directory into a single `.recast` archive for sharing. The project stays a directory.
 #[tauri::command]
 pub async fn export_project_archive(project_path: String, dest_path: String) -> AppResult<String> {
@@ -3903,41 +3893,23 @@ pub async fn migrate_project(project_path: String) -> AppResult<()> {
     .map_err(|e| AppError::msg(format!("migrate task panicked: {e}")))?
 }
 
+/// A whole state, saved as one sequenced batch on the document owner. The editor
+/// commits through its document replica; this is the path when that replica could
+/// not open, and the one headless writers use.
 #[tauri::command]
 pub async fn save_project_edits(project_path: String, edits_json: String) -> AppResult<u64> {
-    let path_for_blocking = project_path.clone();
     tokio::task::spawn_blocking(move || {
-        crate::project::writer::update_project_edits(Path::new(&path_for_blocking), &edits_json)
+        crate::project::v3::save_edits(Path::new(&project_path), &edits_json)
     })
     .await
     .map_err(|e| AppError::msg(format!("save task panicked: {e}")))?
-    .map_err(AppError::msg)?;
-
-    // Autosave shadow is now redundant — the on-disk project matches memory.
-    crate::project::autosave::clear_autosave(Path::new(&project_path));
+    .map_err(|e| AppError::msg(format!("{e:#}")))?;
 
     let saved_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
     Ok(saved_at)
-}
-
-#[tauri::command]
-pub async fn clear_autosave(project_path: String) {
-    let _ = tauri::async_runtime::spawn_blocking(move || {
-        crate::project::autosave::clear_autosave(Path::new(&project_path));
-    })
-    .await;
-}
-
-/// Scans the autosave temp dir + parses each shadow file — async so a cluttered
-/// recovery dir doesn't block startup on the UI thread.
-#[tauri::command]
-pub async fn get_recoverable_sessions() -> Vec<crate::project::autosave::AutosaveState> {
-    tauri::async_runtime::spawn_blocking(crate::project::autosave::find_recoverable_sessions)
-        .await
-        .unwrap_or_default()
 }
 
 /// Scores, clusters and density-limits a captured cursor track into auto-focus candidates.

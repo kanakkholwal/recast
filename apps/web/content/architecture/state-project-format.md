@@ -90,7 +90,7 @@ flowchart LR
     store["Editor store"]
 
     store -->|"toRenderState() → flat JSON"| split["split_edits + canonicalize"]
-    split -->|"save_project_edits<br/>update_project_edits (atomic)"| sec
+    split -->|"docSession.save<br/>v3::save_edits (one op batch)"| sec
     sec -->|"open_project → merge_sections"| merged["edits.json (cache)"]
     merged -->|"loadEditorDocument"| load["loadRenderState()"]
     load --> store
@@ -112,12 +112,10 @@ flowchart LR
 | `loadRenderState()` | `editor-store.svelte.ts` | Rehydrate store from a (partial) `EditorRenderState`, applying `??` back-compat defaults; clears `isDirty`, sets `savedSnapshot` |
 | `markSaved` / `revertToSaved` / `savedSnapshot` | , ,  | Dirty tracking + revert-to-disk baseline |
 | `EditorRenderState` | `render-state.ts` | The persisted document shape (runes-free, Tauri-free) |
-| `handleSave` / load / migration | `+page.svelte`, ,  | Desktop wiring: serialize→IPC→`markSaved`; load→`loadRenderState`; v1→migration dialog |
-| IPC: `saveProjectEdits`/`autosaveProject`/`migrateProject` | `apps/desktop/src/lib/ipc.ts`, ,  | Tauri command wrappers; save returns saved-at unix ms |
-| `format.rs` (sections, split/merge, canonicalize) | `apps/desktop/src-tauri/src/project/format.rs` | v2 layout, `section_for_key`, `split_edits`, `merge_sections`, `canonicalize`, `is_v2` |
-| `writer.rs` (`write_project`, `update_project_edits`) | `project/writer.rs`,  | Atomic ZIP writes; edits-only rewrite raw-copies media |
-| `reader.rs` (`open_project`) | `project/reader.rs` | Extract to temp cache, fan sections → `edits.json` |
-| `mod.rs` (`is_legacy_project`, `migrate_project`) | `project/mod.rs`,  | v1 detection + in-place re-pack with `.recast.bak` |
+| `handleSave` / load / conversion | `+page.svelte`, ,  | Desktop wiring: serialize→IPC→`markSaved`; load→`loadRenderState`; archive→conversion dialog |
+| IPC: `migrateProject`/`exportProjectArchive`/`importProjectArchive` | `apps/desktop/src/lib/ipc.ts` | Tauri command wrappers for conversion, export and import |
+| `mod.rs` (`open_project`, `is_archive`, `ProjectOpenResult`) | `project/mod.rs` | Opens a directory; refuses an archive and says to convert it |
+| `v3.rs` (`open`, `save_edits`, `write_project`, `import_archive`, `export_archive`) | `project/v3.rs` | The one read, write, import and export path |
 
 ## Control / data flow
 
@@ -140,11 +138,11 @@ flowchart LR
 
 ### Loading a project
 
-1. `loadEditorDocument(path)` (IPC) → Rust `open_project` extracts the ZIP to a
-   per-path temp cache and, for v2, merges `edits/*.json` back into one flat
-   `edits.json` (`reader.rs`). v1 bundles return `needs_migration=true`.
+1. `loadEditorDocument(path)` (IPC) → Rust reads the document through the owner and
+   writes the derived `RenderState` to `.cache/edits.json` (`v3.rs`). A `.recast`
+   archive is answered `needs_migration=true` without being read at all.
 2. The desktop route resets the store, and if `document.needsMigration` is set it
-   **stops** and shows the migration dialog instead of loading
+   **stops** and shows the conversion dialog instead of loading
    (`+page.svelte`). Otherwise it sets `metadata` then calls
    `store.loadRenderState(document.renderState)`.
 3. `loadRenderState` copies each field into fresh state with `??` defaults for
@@ -153,20 +151,20 @@ flowchart LR
 
 ### Saving a project
 
-1. `handleSave` serializes `store.toRenderState()` to JSON and calls
-   `saveProjectEdits(documentPath, editsJson)`.
-2. Rust `save_project_edits` runs `update_project_edits` on a `spawn_blocking`
-   thread, clears the autosave shadow, and returns the save timestamp
-   (`commands/editor.rs`).
-3. `update_project_edits` opens the existing v2 archive, **raw-copies** every
-   non-`edits/` entry (manifest, metadata, media, no decode/re-encode), rewrites
-   only the `edits/` sections (`split_edits` + `canonicalize`), writes to a
-   `.recast.tmp`, and atomically renames over the original (`writer.rs`).
-4. Back in JS, `store.markSaved(savedAt)` clears `isDirty`, records `lastSavedAt`,
+1. `handleSave` calls `docSession.save()`. The replica diffs the store against its
+   own last state and sends only that patch's ops, so a save is a patch, not a
+   whole document. A file opened without a project has no session and says so.
+2. `doc.apply` lands the batch on the owner, which appends it to the WAL and
+   checkpoints `project.rcx` 500 ms later.
+3. The headless door is `save_project_edits`, which runs `v3::save_edits`: it
+   diffs a whole state against the owner's copy, so a socket write and a GUI save
+   share one `seq`.
+4. Back in JS, `store.markSaved(...)` clears `isDirty`, records `lastSavedAt`,
    and refreshes `savedSnapshot`.
 
-Autosave (`autosaveProject`, `analysis.ts`) writes the same `toRenderState()`
-JSON to a separate recovery shadow, gated on `isDirty`.
+The 30-second timer commits the document rather than writing a shadow. The old
+recovery shadow is gone: it wrote a full `JSON.stringify(state)` that nothing ever
+read back, and the WAL already replays an interrupted session on the next open.
 
 ## The v3 folder project
 
@@ -280,19 +278,14 @@ is a setting, see the agentic page.
   `enqueue_export` and are **never** persisted or read back by `loadRenderState`
   (`render-state.ts`). `loadRenderState` must default every optional field with
   `??` or an older project fails to load.
-- **`.recast` v2 is sectioned + independently versioned.** `section_for_key`
-  (`format.rs`) is a grouping table, not a type mirror; unrecognised keys fall
-  back to `frame`, so a *future* editor toggle round-trips losslessly even before the
-  table learns it (`RenderState` passthrough + the `futureKey` round-trip tests).
-  Each `edits/<section>.json` carries its own `version` for per-section migration.
-  Output is canonicalized (sorted keys, id-sorted arrays) so git diffs are minimal
-  (`canonicalize`).
-- **Atomic writes; never remove-before-rename.** `update_project_edits` writes a
-  `.recast.tmp`, `sync_all()`, then `fs::rename` over the original, which already
-  replaces atomically. Deleting the original first opens a window where a crash
-  loses the project outright (`writer.rs`, and the reader mirrors this for
-  extracted assets at `reader.rs`). Packing and unpacking stage beside the target
-  and swap for the same reason (`package.rs`, `v3.rs`).
+- **An unmodelled key still round-trips.** `RenderState` carries a flattened
+  `passthrough`, so a *future* editor toggle survives a save and a reload before the
+  schema learns about it. `project.rcx` is written canonically (sorted attributes,
+  elided defaults) so a one-field edit is a one-line git diff.
+- **Atomic writes; never remove-before-rename.** Packing, unpacking and converting
+  all stage beside the target and rename over it, which already replaces atomically.
+  Deleting first opens a window where a crash loses the project outright
+  (`package.rs`, `migrate.rs`, `v3.rs`).
 - **Conversion is dialog-gated and backed up.** An opened archive reports
   `needs_migration`, the user confirms, and the archive is kept as a one-time
   `.recast.bak` (recordings can be irreplaceable). Nothing writes a v2 bundle any

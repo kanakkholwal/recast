@@ -117,6 +117,29 @@ pub struct EditorDocument {
     pub needs_migration: bool,
 }
 
+impl EditorDocument {
+    /// An archive, answered without reading it: the editor stops on `needs_migration`
+    /// and prompts, so every other field would be thrown away.
+    #[must_use]
+    pub fn needing_conversion(path: String) -> Self {
+        Self {
+            project_path: path.clone(),
+            media_path: path,
+            cursor_path: None,
+            edits_path: None,
+            audio_path: None,
+            microphone_path: None,
+            camera_path: None,
+            camera_capture: CameraCapture::Off,
+            track_offsets: crate::recording::TrackOffsets::default(),
+            metadata: VideoMetadata::default(),
+            render_state: RenderState::default(),
+            format: None,
+            needs_migration: true,
+        }
+    }
+}
+
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingStartResult {

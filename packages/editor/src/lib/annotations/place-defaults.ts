@@ -59,3 +59,25 @@ export function clickPlacedArrow(
 		y2: clamp01(y1 + dy > 1 ? y1 - dy : y1 + dy),
 	};
 }
+
+/** How long a newly placed annotation lasts, in seconds. */
+const PLACED_SECONDS = 2;
+
+/**
+ * Time range for an annotation placed at the playhead. The fade-in runs BEFORE
+ * `now`, so the annotation is at full opacity exactly where it was placed; ending
+ * the fade at the playhead instead would leave the thing you just added invisible
+ * until you seeked past it.
+ */
+export function placedTimeRange(
+	now: number,
+	trimStart: number,
+	clipEnd: number,
+	rampIn: number,
+): { start: number; end: number } {
+	const at = Math.min(Math.max(now, trimStart), clipEnd);
+	const wanted = Math.max(trimStart, at - Math.max(0, rampIn));
+	// Slid back off the tail rather than truncated, or placing at the very end gives an annotation made entirely of fade.
+	const start = Math.max(trimStart, Math.min(wanted, clipEnd - PLACED_SECONDS));
+	return { start, end: Math.min(clipEnd, start + PLACED_SECONDS) };
+}

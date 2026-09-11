@@ -32,6 +32,8 @@ export interface ExportJobInputs {
 	cameraOffsetMs?: number;
 	quality: ExportQuality;
 	fps: number;
+	/** Text that could not be rasterised and is missing from the job. */
+	onTextDropped?(contents: string[]): void;
 }
 
 /**
@@ -120,7 +122,7 @@ export async function buildExportJob(
 	// Neither the engine nor Rust has a font rasteriser, so text reaches the scene pre-rendered at composition resolution.
 	const annotations = store.annotationsGloballyHidden
 		? []
-		: await expandTextAnnotations(store.annotationsByZ, width, height);
+		: await expandTextAnnotations(store.annotationsByZ, width, height, opts.onTextDropped);
 	const annotationImages = await preloadAnnotationBitmaps(annotations);
 
 	const captionTrack = buildCaptionTrack(store);

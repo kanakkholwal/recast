@@ -1299,8 +1299,8 @@ mod disk_roundtrip_tests {
     use serde_json::json;
 
     use super::*;
-    use crate::project::reader::open_project;
-    use crate::project::writer::{self, ProjectWriteRequest};
+    use crate::project::open_project;
+    use crate::project::v3::{self, ProjectWriteRequest};
     use crate::project::ProjectMetadata;
     use crate::render::ops::Op;
 
@@ -1334,20 +1334,19 @@ mod disk_roundtrip_tests {
         .expect("fixture metadata")
     }
 
-    /// A v2 bundle whose edits are `RenderState::default()` trimmed to 10s.
+    /// A project directory whose edits are `RenderState::default()` trimmed to 10s.
     fn write_fixture_project(ws: &Path) -> PathBuf {
         let recording = ws.join("rec.mp4");
         let cursor = ws.join("cursor.json");
         fs::write(&recording, b"video-bytes").expect("recording");
-        fs::write(&cursor, br#"{"samples":[]}"#).expect("cursor");
+        fs::write(&cursor, br#"{"samples":[],"clicks":[]}"#).expect("cursor");
 
         let state = RenderState {
             trim_end: 10.0,
             ..RenderState::default()
         };
-        let out = ws.join("project.recast");
-        writer::write_project(ProjectWriteRequest {
-            output_path: out.clone(),
+        v3::write_project(ProjectWriteRequest {
+            output_path: ws.join("project.recast"),
             metadata: fixture_metadata(),
             recording_path: recording,
             cursor_path: cursor,
@@ -1356,8 +1355,7 @@ mod disk_roundtrip_tests {
             camera_path: None,
             edits_json: serde_json::to_string(&state).expect("serialize"),
         })
-        .expect("write v2");
-        out
+        .expect("write the project")
     }
 
     fn read_state(project: &Path) -> RenderState {
@@ -1367,7 +1365,7 @@ mod disk_roundtrip_tests {
     }
 
     fn save_edits(project: &Path, state: &RenderState) {
-        writer::update_project_edits(project, &serde_json::to_string(state).expect("serialize"))
+        v3::save_edits(project, &serde_json::to_string(state).expect("serialize"))
             .expect("save edits");
     }
 
@@ -1525,17 +1523,18 @@ mod disk_roundtrip_tests {
         );
     }
 
-    /// The whole reason the journal exists: proposing costs no bundle rewrite.
+    /// The whole reason the journal exists: proposing costs no rewrite of the project.
     #[test]
-    fn proposing_edits_leaves_the_bundle_untouched() {
+    fn proposing_edits_leaves_the_document_untouched() {
         let ws = workspace();
         let project = write_fixture_project(&ws);
-        let before = fs::read(&project).expect("read bundle");
+        let document = project.join(recast_project::layout::DOCUMENT);
+        let before = fs::read(&document).expect("read the document");
         let store = BranchStore::new(ws.join("branches"));
 
         proposed_branch(&store, &project);
 
-        assert_eq!(fs::read(&project).expect("read bundle"), before);
+        assert_eq!(fs::read(&document).expect("read the document"), before);
     }
 
     #[test]

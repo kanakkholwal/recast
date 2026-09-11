@@ -14,6 +14,7 @@ import {
 	keyframesFromMotionSegments,
 } from "../components/_components/camera-overlay.logic";
 import { resolveTokenRgb, resolveTokenRgba } from "../lib/annotations/canvas-tokens";
+import { placedTimeRange } from "../lib/annotations/place-defaults";
 import {
 	editAnchor,
 	layoutAtStart,
@@ -1043,14 +1044,11 @@ export function createEditorStore() {
 	): Annotation {
 		pushUndoState();
 		const clipEnd = trimEnd || metadata?.duration || 0;
-		// Clamp into the trimmed clip so an annotation added at the trim end still yields a forward range.
-		const now = Math.min(Math.max(currentTime, trimStart), clipEnd);
-		let s = start ?? now;
-		let e = end ?? Math.min(clipEnd, s + 2.0);
-		if (!(e > s)) {
-			s = Math.max(trimStart, clipEnd - 2.0);
-			e = clipEnd;
-		}
+		// An explicit start is a range edge, not a placement point, so no fade leads into it.
+		const lead = start === undefined ? DEFAULT_ANNOTATION_RAMP : 0;
+		const placed = placedTimeRange(start ?? currentTime, trimStart, clipEnd, lead);
+		const s = placed.start;
+		const e = end !== undefined && end > s ? end : placed.end;
 		// Theme colour rather than a fixed blue, resolved to a concrete value here because the export bakes it.
 		const themeColor = resolveTokenRgb("var(--primary)");
 		const annotation: Annotation = {
@@ -1438,6 +1436,15 @@ export function createEditorStore() {
 	function outputToRenderSec(outputSec: number): number {
 		if (!showCutGaps) return outputSec;
 		return originalToOutput(renderMap, outputToOriginal(timeMapMemo, outputSec));
+	}
+	/**
+	 * A source-clock time (where annotations, zooms and the playhead live) as the
+	 * position the viewer will see it at. Every time PRINTED for a human goes
+	 * through this: raw source seconds disagree with the ruler as soon as there is
+	 * one cut or one speed change.
+	 */
+	function displaySec(originalSec: number): number {
+		return originalToOutput(timeMapMemo, originalSec);
 	}
 	function renderSecToOutputSec(renderSec: number): number {
 		if (!showCutGaps) return renderSec;
@@ -2219,6 +2226,7 @@ export function createEditorStore() {
 		},
 		outputToRenderSec,
 		renderSecToOutputSec,
+		displaySec,
 		get showCutGaps() {
 			return showCutGaps;
 		},

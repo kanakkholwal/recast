@@ -9,7 +9,7 @@ use super::error::{AppError, AppResult};
 use super::system::get_active_output_dir;
 use super::types::{AppState, RecordingEntry, RecordingStartResult};
 use crate::capture::{CaptureTarget, RegionRect};
-use crate::project::writer::ProjectWriteRequest;
+use crate::project::v3::ProjectWriteRequest;
 use crate::project::{ProjectMediaMetadata, ProjectMetadata, ProjectVideoMetadata};
 use crate::recording::{CameraPreviewUpdate, RecordingOptions};
 use crate::render::graph::RenderState;

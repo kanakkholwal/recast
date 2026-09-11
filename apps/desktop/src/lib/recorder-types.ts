@@ -92,14 +92,8 @@ export interface EditorDocument {
 	renderState: EditorRenderState;
 	/** On-disk shape the project was opened from; null for a plain video. */
 	format: "v1" | "v2" | "v3" | null;
-	/** True when the bundle must be migrated before the editor loads it. */
+	/** True when this is a `.recast` archive and must be converted before it loads. */
 	needsMigration: boolean;
-}
-
-export interface AutosaveState {
-	projectPath: string;
-	savedAtUnixMs: number;
-	editsJson: string;
 }
 
 /** One encoder candidate (H.264 or HEVC) and whether it really initializes

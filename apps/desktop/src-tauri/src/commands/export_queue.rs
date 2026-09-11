@@ -395,7 +395,7 @@ pub async fn enqueue_export(
     let input_path = PathBuf::from(&request.input_path);
     let source_video: PathBuf =
         if input_path.extension().and_then(|value| value.to_str()) == Some("recast") {
-            match crate::project::reader::open_project(&input_path) {
+            match crate::project::open_project(&input_path) {
                 Ok(p) => p.recording_path,
                 Err(e) => {
                     return Err(AppError::msg(format!(

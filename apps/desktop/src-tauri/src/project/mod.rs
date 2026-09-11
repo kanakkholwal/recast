@@ -3,23 +3,55 @@ use serde::{Deserialize, Serialize};
 use crate::capture::CaptureTarget;
 use crate::recording::RecordingStats;
 
-pub mod autosave;
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Result};
+
 pub mod documents;
-pub mod format;
 pub mod journal;
 pub mod journal_doc;
-pub mod reader;
 pub mod v3;
 pub mod watch;
-pub mod writer;
 
-/// On-disk shape a project was opened from.
+/// On-disk shape a project was opened from. One variant: a project is a directory.
+/// It stays an enum so `Option<Format>` keeps saying "project" against "plain video".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
-    V1,
-    V2,
     V3,
+}
+
+/// Where a project's parts live, once it is open.
+#[derive(Debug, Clone)]
+pub struct ProjectOpenResult {
+    pub metadata: ProjectMetadata,
+    pub format: Format,
+    /// True for a `.recast` archive: it is converted to a directory before it loads.
+    pub needs_migration: bool,
+    pub recording_path: PathBuf,
+    pub cursor_path: PathBuf,
+    pub edits_path: PathBuf,
+    pub audio_path: Option<PathBuf>,
+    pub microphone_path: Option<PathBuf>,
+    pub camera_path: Option<PathBuf>,
+}
+
+/// Opens the project directory at `path`. An archive is refused rather than read:
+/// it has to be converted first, which is what `needs_migration` asks the editor for.
+pub fn open_project(path: &Path) -> Result<ProjectOpenResult> {
+    if !v3::is_project_dir(path) {
+        bail!(
+            "{} is not a project directory; convert the archive first",
+            path.display()
+        );
+    }
+    v3::open(path)
+}
+
+/// Whether `path` is a `.recast` archive waiting to be converted.
+#[must_use]
+pub fn is_archive(path: &Path) -> bool {
+    path.is_file() && path.extension().is_some_and(|e| e == "recast")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

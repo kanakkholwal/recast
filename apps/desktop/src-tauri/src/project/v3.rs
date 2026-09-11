@@ -14,9 +14,20 @@ use super::documents::{documents, Outcome};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use super::reader::ProjectOpenResult;
-use super::writer::ProjectWriteRequest;
 use super::ProjectMetadata;
+use super::ProjectOpenResult;
+
+/// Everything a finished recording hands the writer.
+pub struct ProjectWriteRequest {
+    pub output_path: PathBuf,
+    pub metadata: ProjectMetadata,
+    pub recording_path: PathBuf,
+    pub cursor_path: PathBuf,
+    pub audio_path: Option<PathBuf>,
+    pub microphone_path: Option<PathBuf>,
+    pub camera_path: Option<PathBuf>,
+    pub edits_json: String,
+}
 use crate::render::graph::RenderState;
 
 /// Whether `path` is a v3 project directory. A bundle, a plain video, or a missing path is not.

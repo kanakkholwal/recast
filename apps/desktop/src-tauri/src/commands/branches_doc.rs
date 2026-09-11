@@ -336,7 +336,7 @@ fn summary(branch: &DocBranch, now: i64) -> BranchSummary {
 mod tests {
     use super::*;
     use crate::project::v3::write_project;
-    use crate::project::writer::ProjectWriteRequest;
+    use crate::project::v3::ProjectWriteRequest;
     use crate::project::ProjectMetadata;
     use recast_project::layout;
 

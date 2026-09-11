@@ -385,18 +385,8 @@ pub fn run() {
                 let _ = ffmpeg::preferred_h264_encoder();
             });
 
-            // Startup: clean up stale temp files and orphaned session artifacts.
-            let state = app.state::<AppState>();
-            let output_dir = state.config.read().output_dir.clone();
-            if let Some(dir) = output_dir {
-                // The last disk walk in setup(), which runs before the event loop and delayed first paint on macOS.
-                tauri::async_runtime::spawn_blocking(move || {
-                    project::autosave::cleanup_stale_sessions(std::path::Path::new(&dir));
-                });
-            }
-
-            // Startup-only: nothing is open yet, so no live editor can lose the assets under it.
-            tauri::async_runtime::spawn_blocking(project::reader::sweep_cache);
+            // Startup-only: nothing is open yet, so no live editor loses an artifact under it.
+            tauri::async_runtime::spawn_blocking(cache::sweep);
 
             // `Drop` doesn't run on a kill, so scratch dirs pile up; startup plus single-instance means nothing is still writing.
             tauri::async_runtime::spawn_blocking(|| {
@@ -406,7 +396,17 @@ pub fn run() {
                 sweep_stale_temp(std::env::temp_dir(), Some("recast-export-"));
                 // Oversized `-filter_complex_script` files.
                 sweep_stale_temp(std::env::temp_dir(), Some("recast-filtergraph-"));
+                // Left by the recovery shadow, deleted in favour of the document WAL.
+                let _ = std::fs::remove_dir_all(std::env::temp_dir().join("recast-autosave"));
             });
+
+            // A crash mid-recording leaves session media in the user's own recordings folder, which nothing else sweeps.
+            let output_dir = app.state::<AppState>().config.read().output_dir.clone();
+            if let Some(dir) = output_dir {
+                tauri::async_runtime::spawn_blocking(move || {
+                    recording::sweep_orphaned_artifacts(std::path::Path::new(&dir));
+                });
+            }
 
             Ok(())
         })
@@ -443,6 +443,7 @@ pub fn run() {
             commands::release_editor_write,
             commands::force_release_editor_write,
             commands::migrate_project,
+            commands::save_project_edits,
             commands::export_project_archive,
             commands::import_project_archive,
             commands::doc_show,
@@ -468,10 +469,6 @@ pub fn run() {
             commands::save_browser_export_video,
             commands::exclude_window_from_capture,
             commands::set_window_aspect_ratio,
-            commands::autosave_project,
-            commands::save_project_edits,
-            commands::clear_autosave,
-            commands::get_recoverable_sessions,
             commands::suggest_zoom_regions,
             silence::detect_silence,
             silence::extract_waveform,

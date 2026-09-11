@@ -30,7 +30,6 @@ import { analytics } from "$lib/analytics/client";
 import type {
 	AuthStartResult,
 	AuthStatus,
-	AutosaveState,
 	CameraDeviceInfo,
 	CameraPreviewState,
 	CameraValidationResult,
@@ -114,7 +113,6 @@ export type {
 	AuthStartResult,
 	AuthStatus,
 	AuthUsage,
-	AutosaveState,
 	CameraDeviceInfo,
 	CameraPreviewState,
 	CameraValidationResult,
@@ -496,6 +494,15 @@ export function migrateProject(projectPath: string): Promise<void> {
 	return invoke<void>("migrate_project", { projectPath });
 }
 
+/**
+ * Persist a whole render state into the project as one sequenced batch. The editor
+ * commits through its document replica; this is the path when that replica could
+ * not open, and the one headless writers use.
+ */
+export function saveProjectEdits(projectPath: string, editsJson: string): Promise<number> {
+	return invoke<number>("save_project_edits", { projectPath, editsJson });
+}
+
 /** Pack a project folder into a single `.recast` archive. The project stays a folder. */
 export function exportProjectArchive(projectPath: string, destPath: string): Promise<string> {
 	return invoke<string>("export_project_archive", { projectPath, destPath });
@@ -816,28 +823,6 @@ export function deleteRemoteAsrEndpoint(id: string): Promise<void> {
  *  keyring. Write-only: there is no getter. */
 export function setRemoteAsrKey(id: string, key: string): Promise<void> {
 	return invoke("set_remote_asr_key", { id, key });
-}
-
-// Autosave / Recovery commands
-
-export function autosaveProject(projectPath: string, editsJson: string): Promise<void> {
-	return invoke("autosave_project", { projectPath, editsJson });
-}
-
-/**
- * Persist the current edits back into the `.recast` archive. Returns the
- * save timestamp (unix ms) so the UI can show "Saved at HH:MM".
- */
-export function saveProjectEdits(projectPath: string, editsJson: string): Promise<number> {
-	return invoke<number>("save_project_edits", { projectPath, editsJson });
-}
-
-export function clearAutosave(projectPath: string): Promise<void> {
-	return invoke("clear_autosave", { projectPath });
-}
-
-export function getRecoverableSessions(): Promise<AutosaveState[]> {
-	return invoke<AutosaveState[]>("get_recoverable_sessions");
 }
 
 // External asset cache

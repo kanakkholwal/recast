@@ -221,12 +221,12 @@ $effect(() => () => {
                 type="button"
                 class="focus-visible:ring-ring group relative block w-full focus-visible:ring-2 focus-visible:outline-none"
                 onclick={() => (inspecting = span)}
-                aria-label="Inspect the {span.elements.length} elements read at {clock(span.start)}"
+                aria-label="Inspect the {span.elements.length} elements read at {clock(store.displaySec(span.start))}"
               >
                 {#if span.preview}
                   <img
                     src={span.preview}
-                    alt="Frame read at {clock(span.start)}"
+                    alt="Frame read at {clock(store.displaySec(span.start))}"
                     class="block w-full"
                     loading="lazy"
                   />
@@ -251,9 +251,9 @@ $effect(() => () => {
                     type="button"
                     class="hover:text-primary focus-visible:ring-ring rounded text-xs font-medium tabular-nums focus-visible:ring-2 focus-visible:outline-none"
                     onclick={() => store.seek(span.start)}
-                    title="Jump to {clock(span.start)}"
+                    title="Jump to {clock(store.displaySec(span.start))}"
                   >
-                    {clock(span.start)} – {clock(span.end)}
+                    {clock(store.displaySec(span.start))} – {clock(store.displaySec(span.end))}
                   </button>
                   <Badge variant="secondary" class="h-4 shrink-0 px-1 text-[9px] tabular-nums">
                     {span.elements.length}
@@ -288,4 +288,5 @@ $effect(() => () => {
     if (!open) inspecting = null;
   }}
   onSeek={(t) => store.seek(t)}
+  displaySec={(t) => store.displaySec(t)}
 />

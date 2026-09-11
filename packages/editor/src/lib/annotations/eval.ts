@@ -72,7 +72,8 @@ export function evalZoom(zoomRegions: ZoomRegionLike[], t: number): ZoomTransfor
  * (v2; defaults to 1).
  */
 export function evalOpacity(a: Annotation, t: number): number {
-	if (t <= a.start || t >= a.end) return 0;
+	// Both ends inclusive, matching Rust's `annotation_alpha`: an un-faded annotation draws on its own first frame.
+	if (t < a.start || t > a.end) return 0;
 	const dur = Math.max(0, a.end - a.start);
 	const half = dur * 0.5;
 	const rampIn = Math.min(Math.max(0, a.rampIn), half);

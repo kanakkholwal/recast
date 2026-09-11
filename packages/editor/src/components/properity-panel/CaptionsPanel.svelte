@@ -1164,7 +1164,7 @@ const noSpeechFound = $derived(
                     : "text-muted-foreground/70 group-hover:text-foreground",
                 )}
               >
-                {clock(seg.start)}
+                {clock(store.displaySec(seg.start))}
               </span>
               <span
                 class={cn(

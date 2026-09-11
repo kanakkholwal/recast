@@ -12,12 +12,15 @@ import type { Annotation } from "../../stores/editor-store.svelte";
  * Replace every text annotation with an image annotation whose `path` is a
  * `data:image/png;base64,…` URL of the pre-rendered transparent PNG.
  *
- * @param canvasWidth  Pixel width of the export canvas (source.width + 2*padding).
+ * @param canvasWidth Pixel width of the export canvas (source.width + 2*padding).
+ * @param onDropped Called once with the text of every annotation that could not be
+ * rendered, so the host can say so. Without it the loss is only in the console.
  */
 export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 	annotations: T[],
 	canvasWidth: number,
 	canvasHeight: number,
+	onDropped?: (contents: string[]) => void,
 ): Promise<T[]> {
 	if (canvasWidth <= 0 || canvasHeight <= 0) return annotations;
 	// Wait for webfonts, so a text annotation doesn't bake in a fallback font it was never previewed with.
@@ -29,6 +32,7 @@ export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 		}
 	}
 	const out: T[] = [];
+	const dropped: string[] = [];
 	for (const a of annotations) {
 		if (a.kind.kind !== "text") {
 			out.push(a);
@@ -37,8 +41,9 @@ export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 		const k = a.kind;
 		const rendered = renderTextToDataUrl(k, canvasWidth, canvasHeight);
 		if (!rendered) {
-			// Drop the annotation rather than fail the whole export.
+			// Drop the annotation rather than fail the whole export, but say which.
 			console.warn("rasterize-text: failed to render text annotation, skipping", k.content);
+			dropped.push(k.content);
 			continue;
 		}
 		out.push({
@@ -56,6 +61,7 @@ export async function expandTextAnnotations<T extends Pick<Annotation, "kind">>(
 			},
 		} as T);
 	}
+	if (dropped.length > 0) onDropped?.(dropped);
 	return out;
 }
 

@@ -230,7 +230,7 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
               {kindLabel(a)}
             </p>
             <p class="text-[10px] tabular-nums text-muted-foreground">
-              {fmtTime(a.start)}–{fmtTime(a.end)}
+              {fmtTime(store.displaySec(a.start))}–{fmtTime(store.displaySec(a.end))}
             </p>
           </div>
         </div>

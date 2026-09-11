@@ -95,8 +95,6 @@ import { acquireEditorWrite, releaseEditorWrite } from "$lib/editor/agent-sessio
 import { tauriEditorServices } from "$lib/editor/services.tauri";
 import type { RecordingEntry } from "$lib/ipc";
 import {
-	autosaveProject,
-	clearAutosave,
 	createExportId,
 	detectSilence,
 	extractWaveform,
@@ -105,8 +103,8 @@ import {
 	listExports,
 	loadEditorDocument,
 	migrateProject,
-	openFileLocation,
 	saveProjectEdits,
+	openFileLocation,
 } from "$lib/ipc";
 import { fileUrl } from "$lib/assetUrl";
 import { log } from "$lib/logger";
@@ -219,6 +217,8 @@ let cameraCapture = $state<CameraCapture>("legacy");
 let trackOffsets = $state(resolveTrackOffsets(undefined));
 let cameraSrc = $state("");
 let documentPath = $state("");
+// A plain video has nowhere to save edits into. Plain `let`: only the save handlers read it.
+let isProject = false;
 // v3 projects only: the replica that mirrors edits to the core as op batches. Null for a bundle or a plain video.
 let docSession: DocumentSession | null = null;
 let isLoading = $state(true);
@@ -254,11 +254,11 @@ $effect(() => {
 	}
 });
 
-// A v1 `.recast` must migrate first; migrationDone separates a confirmed update (reload) from a dismissal (leave).
+// A `.recast` archive must be converted first; migrationDone separates a confirmed conversion (reload) from a dismissal (leave).
 let showMigration = $state(false);
 let migrationDone = false;
 
-// Autosave: save edit state every 30 seconds while editing.
+// Autosave: commit the document every 30 seconds while editing.
 const AUTOSAVE_INTERVAL_MS = 30_000;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -272,13 +272,10 @@ function startAutosave() {
 		if (!documentPath || isLoading) return;
 		// Most idle ticks are clean, so skip the full serialize until there is real work to persist.
 		if (!store.isDirty) return;
+		// A plain video opened without a project has nowhere to autosave to.
+		if (!isProject) return;
 		try {
-			if (docSession) {
-				await docSession.commit();
-			} else {
-				const editsJson = JSON.stringify(store.toRenderState());
-				await autosaveProject(documentPath, editsJson);
-			}
+			await commitProject();
 			if (autosaveFailing) {
 				autosaveFailing = false;
 				toast.dismiss(AUTOSAVE_TOAST_ID);
@@ -342,7 +339,7 @@ async function openDocumentSession(projectPath: string | null) {
 				log.warn("document", `replica ${context} failed`, { err: String(err) }),
 		});
 	} catch (err) {
-		// The store still saves whole-state through the adapter, so the editor stays usable without a replica.
+		// `saveProject` falls back to a whole-state save, so the editor stays usable without a replica.
 		log.warn("document", "replica unavailable", { err: String(err) });
 	}
 }
@@ -422,10 +419,6 @@ onDestroy(() => {
 	stopAutosave();
 	void openDocumentSession(null);
 	log.clearRecast();
-	// Clear autosave on clean exit.
-	if (documentPath) {
-		clearAutosave(documentPath).catch(() => undefined);
-	}
 	// Keep a live export tracked in the activity center after navigation; only drop the foreground flag.
 	exportActivity.minimize();
 });
@@ -861,6 +854,7 @@ async function loadDocument() {
 		store.videoPath = document.projectPath;
 		store.metadata = document.metadata;
 		store.loadRenderState(document.renderState);
+		isProject = document.format !== null;
 		await openDocumentSession(document.format === "v3" ? document.projectPath : null);
 		// Scope every subsequent log in this window to the opened recast.
 		log.setRecast(documentPath, {
@@ -965,9 +959,7 @@ async function runAutoZoom(opts: { silentEmpty?: boolean; undoOnError?: boolean 
 	autoZoomRunning = true;
 	try {
 		// generateAutoZoom latches store.autoZoomApplied itself on non-error paths.
-		const outcome = await generateAutoZoom(store, cursorPath, {
-			documentPath,
-		});
+		const outcome = await generateAutoZoom(store, cursorPath);
 		if (outcome.reason === "bad-bounds") return;
 		if (outcome.applied > 0) {
 			toast.success(`Added ${outcome.applied} focus moment${outcome.applied === 1 ? "" : "s"}`, {
@@ -1086,6 +1078,17 @@ const exportResult = $derived<ExportResult | null>(
 				: null,
 );
 
+// Text that would not rasterise is dropped rather than failing the whole export, which in a desktop app is invisible without this.
+function warnTextDropped(contents: string[]) {
+	const preview = contents
+		.map((t) => t.trim().split(/\r?\n/)[0])
+		.filter(Boolean)
+		.join(", ");
+	toast.warning(
+		`${contents.length} text annotation${contents.length > 1 ? "s" : ""} couldn't be rendered and won't appear in the export${preview ? `: ${preview}` : ""}`,
+	);
+}
+
 async function handleExport() {
 	if (isExportingHere) return;
 	const exportId = createExportId();
@@ -1115,6 +1118,7 @@ async function handleExport() {
 		const { renderState: finalRenderState, metadata: meta } = await buildExportRenderState(store, {
 			skipVisualRaster: engine.engine === "browser",
 			engineExport: experimentalStore.isEnabled("engineExport"),
+			hooks: { onTextDropped: warnTextDropped },
 		});
 
 		// Warn but don't block: the export otherwise drops unloadable image annotations silently.
@@ -1192,6 +1196,7 @@ async function handleExport() {
 				cameraOffsetMs: trackOffsets.cameraMs,
 				quality: store.exportQuality as ExportQuality,
 				fps: renderFps,
+				onTextDropped: warnTextDropped,
 			});
 			exportActivity.enqueueBrowserExport({
 				id: exportId,
@@ -1523,20 +1528,38 @@ function getExportRangeLabel() {
 
 let isSaving = $state(false);
 
+/** Persist without touching the dirty flag, for the timer. Falls back to a
+ *  whole-state write: a replica that failed to open must not make a real project
+ *  unsaveable, which is what deleting the old autosave shadow nearly caused. */
+async function commitProject(): Promise<number> {
+	if (docSession) {
+		await docSession.commit();
+		return Date.now();
+	}
+	return saveProjectEdits(documentPath, JSON.stringify(store.toRenderState()));
+}
+
+/** The Save button: commit, flush to disk, and move the revert baseline. */
+async function saveProject() {
+	if (docSession) {
+		await docSession.save();
+		store.markSaved(Date.now());
+		return;
+	}
+	store.markSaved(await commitProject());
+}
+
 async function handleSave() {
 	if (!documentPath || isSaving || isLoading) return;
 	isSaving = true;
 	// Serialize stays on the main thread: Tauri JSON-encodes command args there anyway, so a worker only adds a clone.
 	await tick();
 	try {
-		if (docSession) {
-			await docSession.save();
-			store.markSaved(Date.now());
-		} else {
-			const editsJson = JSON.stringify(store.toRenderState());
-			const savedAt = await saveProjectEdits(documentPath, editsJson);
-			store.markSaved(savedAt);
+		if (!isProject) {
+			toast.warning("This is a video file, not a project, so there's nothing to save edits into.");
+			return;
 		}
+		await saveProject();
 		toast.success("Saved");
 	} catch (err) {
 		const message =

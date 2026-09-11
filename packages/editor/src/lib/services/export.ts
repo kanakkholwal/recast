@@ -40,6 +40,8 @@ export interface ExportPrepHooks {
 	onText?(status: "running" | "done"): void;
 	onCursor?(status: "running" | "done"): void;
 	onSending?(status: "running" | "done"): void;
+	/** Text that could not be rasterised and is missing from the export. */
+	onTextDropped?(contents: string[]): void;
 }
 
 export interface BuildExportRenderStateOptions {
@@ -101,7 +103,9 @@ export async function buildExportRenderState(
 	// Independent, and the cursor SVG decode is non-trivial cold, since Image() onload is async even for blobs.
 	const [expandedAnnotations, cursorSprites] = await Promise.all([
 		(rasterisesText
-			? expandTextAnnotations(renderState.annotations, canvasW, canvasH)
+			? expandTextAnnotations(renderState.annotations, canvasW, canvasH, (dropped) =>
+					hooks?.onTextDropped?.(dropped),
+				)
 			: Promise.resolve(renderState.annotations)
 		).then((r) => {
 			hooks?.onText?.("done");
