@@ -55,7 +55,7 @@
 		"tailwindcss": "^4.3.3",
 		"typescript": "^5.9.3",
 		"vite": "^8.2.2",
-		"vitest": "^3.2.7"
+		"vitest": "^5.0.0"
 	},
 	"dependencies": {
 		"@choochmeque/tauri-plugin-sharekit-api": "^0.3.1",
