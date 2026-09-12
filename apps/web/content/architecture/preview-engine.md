@@ -250,9 +250,17 @@ only one there is. That is why a composition item or a text component can name a
 font and still draw on a machine that does not have it.
 
 Text annotations are where this gets decided rather than assumed. A webview has
-no font database, so the desktop side reads the face its own database picked and
-hands the bytes over; a browser with no such service gets nothing back, and there
-the DOM draws the text.
+no font database, so the desktop resolves each face with `resolve_engine_font`,
+the function the native export calls: the installed face first, else the Google
+family, downloaded once. The preview reaches it through `engine_font_bytes`; a
+browser with no such service gets nothing back, and there the DOM draws the text.
+
+Which faces and images to fetch is the compositor's answer, not the host's
+guess. After each scene push `syncEngineAssets` (`VideoPreview.svelte`) reads
+`wantedFaces`, `fallbackFace` and `wantedImages` from the session, the same
+`host_needs` lists the native export reads, and uploads what changed. One list
+per side had drifted twice: composition images and component fonts were in
+neither.
 
 Two rules keep the swap honest. The engine takes the words only when a face
 resolved for EVERY family on screen, because some words in one shaper and the
@@ -314,14 +322,16 @@ two simply overlap. Nothing has to know which one is leaving.
   the host must hand it the *smoothed* path. The export used to ship the raw
   samples, which put the recorded jitter back into the exported pointer while
   the preview looked fine.
-- **Captions need font BYTES, not a `FontFace`.** The engine shapes with
-  rustybuzz, which cannot read the woff2 the DOM loads. The host resolves a TTF
-  natively and uploads it (`lib/fonts/engine-font.ts`); the font has to land
-  before the track, because the layout measures glyphs.
-- **Text annotations are rasterised before the scene reaches the engine.**
-  Neither the engine nor Rust has a font rasteriser for arbitrary annotation
-  text, so `expandTextAnnotations` substitutes an image annotation at
-  composition resolution. This is the same substitution the native export does.
+- **Text needs font BYTES, not a `FontFace`.** The engine shapes with
+  rustybuzz, which cannot read the woff2 the DOM loads, and `recast-text`
+  bundles no face. The host fetches a TTF through `engine_font_bytes`
+  (`lib/fonts/engine-font.ts`); it has to land before the track, because the
+  layout measures glyphs.
+- **Text annotations are shaped by the engine or rasterised, never a mix.**
+  `engineCanShapeText` hands the words over only when the export will use the
+  engine and every family resolved. Otherwise `expandTextAnnotations`
+  substitutes image annotations at composition resolution, the same
+  substitution the FFmpeg export gets.
 - **Zoom lives in more than one evaluator.** The wasm compositor, the native
   compositor and the Rust export graph must stay in lockstep; the compositor's
   golden frames are what hold them there.

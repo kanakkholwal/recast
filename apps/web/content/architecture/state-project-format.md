@@ -1,13 +1,13 @@
 ---
 kind: architecture
 title: "State and the project format"
-description: "The runes store that holds the whole document, the one-way flow rule, the sectioned .recast bundle, and the v3 folder project with its markup document."
+description: "The runes store that holds the whole document, the one-way flow rule, and the folder project with its markup document."
 position: 8
 status: production
 domain: editor
 summary: "One store is the truth. The engines read a snapshot and never write back."
 inputs:
-  - "A loaded .recast bundle"
+  - "A project folder, or a .recast archive to import"
   - "User edits through store methods"
 outputs:
   - "Render-state snapshots for preview and export"
@@ -44,12 +44,12 @@ types, defaults, and pure helpers) so the wire/IPC layer and unit tests can impo
 the shape without pulling in reactivity (`render-state.ts`).
 
 Persistence crosses into Rust. `store.toRenderState()` serializes the document to a
-flat camelCase JSON blob; Rust splits it into per-concern, versioned sections inside
-a `.recast` ZIP (format **v2**: a `project.json` manifest + `edits/<section>.json`
-files + `assets/` media). Reads fan the sections back into one `edits.json`;
-`store.loadRenderState()` rehydrates the store. Legacy v1 bundles (single root
-`edits.json`) are migrated in place behind a dialog. All writes are atomic
-(temp-file + rename, never remove-before-rename).
+flat camelCase JSON blob; the replica turns what changed since its last state into
+an op batch, and the core applies it to the folder's `project.rcx` document (see
+*The v3 folder project* below). On open, Rust derives a `RenderState` from the
+document and `store.loadRenderState()` rehydrates the store. A `.recast` file is an
+archive for moving a project around: it is imported into a folder, never opened in
+place. All writes are atomic (temp-file + rename, never remove-before-rename).
 
 ## Diagram
 
@@ -80,21 +80,23 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    subgraph disk[".recast v2 (ZIP)"]
-        man["project.json<br/>manifest"]
-        meta["metadata.json"]
-        sec["edits/frame·cursor·zoom·<br/>annotations·timeline·audio·overlays.json<br/>(each versioned)"]
-        assets["assets/<br/>recording.mp4 · audio.wav · cursor.track.json"]
+    subgraph disk["Name.recast/ (folder)"]
+        rcx["project.rcx<br/>the document"]
+        wal[".cache/wal.log"]
+        media["media/ · tracks/"]
+        cache[".cache/edits.json"]
     end
 
     store["Editor store"]
+    owner["Documents<br/>(core owner)"]
 
-    store -->|"toRenderState() → flat JSON"| split["split_edits + canonicalize"]
-    split -->|"docSession.save<br/>v3::save_edits (one op batch)"| sec
-    sec -->|"open_project → merge_sections"| merged["edits.json (cache)"]
-    merged -->|"loadEditorDocument"| load["loadRenderState()"]
+    store -->|"docSession.save<br/>opsForState → one op batch"| owner
+    owner -->|"append + fsync"| wal
+    owner -->|"checkpoint 500 ms later"| rcx
+    rcx -->|"open → RenderState"| cache
+    cache -->|"loadEditorDocument"| load["loadRenderState()"]
     load --> store
-    man -. "is_v2? no → migrate_project<br/>(.recast.bak backup)" .-> load
+    archive[".recast archive"] -. "import_project_archive<br/>(migrate or unpack)" .-> disk
 ```
 
 ## Key components
@@ -153,7 +155,9 @@ flowchart LR
 
 1. `handleSave` calls `docSession.save()`. The replica diffs the store against its
    own last state and sends only that patch's ops, so a save is a patch, not a
-   whole document. A file opened without a project has no session and says so.
+   whole document. If the replica failed to open, the save goes through
+   `saveProjectEdits` instead; a plain video opened without a project says it
+   cannot be saved.
 2. `doc.apply` lands the batch on the owner, which appends it to the WAL and
    checkpoints `project.rcx` 500 ms later.
 3. The headless door is `save_project_edits`, which runs `v3::save_edits`: it
@@ -243,9 +247,9 @@ are the same elements annotations use, and the parent is what says which clock
 they are on. A document does one or the other: the validator refuses a
 `<sequence>` alongside a `<screen>`.
 
-Bundles still open and save through the same store seam, so the editor did
-not change; the folder adapter (`project/v3.rs`) derives `.cache/edits.json`
-from the document on open and diffs the saved state back into ops. Agents
+The editor did not change for the folder format: the folder adapter
+(`project/v3.rs`) derives `.cache/edits.json` from the document on open and
+diffs the saved state back into ops. Agents
 read the document with `recast_doc_show` and propose on branches; live apply
 is a setting, see the agentic page.
 
@@ -288,13 +292,13 @@ is a setting, see the agentic page.
   (`package.rs`, `migrate.rs`, `v3.rs`).
 - **Conversion is dialog-gated and backed up.** An opened archive reports
   `needs_migration`, the user confirms, and the archive is kept as a one-time
-  `.recast.bak` (recordings can be irreplaceable). Nothing writes a v2 bundle any
-  more: `writer::write_project` is `#[cfg(test)]`, kept only to fixture the reader.
+  `.recast.bak` (recordings can be irreplaceable). Nothing writes a v1 or v2
+  bundle any more; the desktop's bundle reader and writer are deleted, and
+  `recast-project` migrates an archive straight to a folder.
 
 - **v3 never trusts the file while the app runs.** Reads through the tool,
   not the disk: the file is a checkpoint up to half a second behind. Two GUI
-  instances on one folder are not supported; the second is read-only, as with
-  bundles.
+  instances on one folder are not supported; the second is read-only.
 - **Migration to v3 never refuses an editor-written value.** A zoom past the
   slider's cap in an old bundle migrates and is reported, not rejected; the
   store likewise refuses only errors a batch introduces, so one legacy value

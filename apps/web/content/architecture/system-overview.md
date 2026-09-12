@@ -11,7 +11,7 @@ inputs:
   - "Microphone and system audio"
   - "An optional camera"
 outputs:
-  - "A .recast project bundle"
+  - "A project folder (Name.recast/), exportable as a single .recast file"
   - "An exported .mp4 or .gif"
 entrypoints:
   - "apps/desktop/src-tauri/src/lib.rs"
