@@ -1,5 +1,6 @@
 import type { IconComponent } from "@recast/icons";
 import {
+	AiWand,
 	BarChart3,
 	Blocks,
 	BookOpen,
@@ -27,6 +28,7 @@ const CONTACT_EMAIL = "mailto:try-recast@gmail.com";
 
 // Product links shared verbatim between Navbar and Footer.
 const FEATURES: NavLink = { label: "Features", href: "/features" };
+const AGENT: NavLink = { label: "Agent", href: "/agent" };
 const EXTENSIONS: NavLink = { label: "Extensions", href: "/extensions" };
 const TOOLS: NavLink = { label: "Tools", href: "/tools" };
 
@@ -70,6 +72,12 @@ export const menuGroups: MenuGroup[] = [
 				href: "/features",
 				description: "Everything Recast does, end to end",
 				icon: Sparkles,
+			},
+			{
+				label: "Agent",
+				href: "/agent",
+				description: "Edit recordings through your AI client",
+				icon: AiWand,
 			},
 			{
 				label: "Download",
@@ -172,6 +180,7 @@ export const footerCols: { title: string; links: NavLink[] }[] = [
 		title: "Product",
 		links: [
 			FEATURES,
+			AGENT,
 			EXTENSIONS,
 			PRICING,
 			{ label: "Download", href: "/download" },

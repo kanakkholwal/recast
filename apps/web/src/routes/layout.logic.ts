@@ -53,6 +53,7 @@ export function isAppArea(pathname: string): boolean {
 // Only public marketing and tool pages are indexed; everything else is marked noindex.
 const PUBLIC_PREFIXES = [
 	"/features",
+	"/agent",
 	"/extensions",
 	"/pricing",
 	"/download",
