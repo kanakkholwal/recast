@@ -134,6 +134,7 @@ fn unpack_into(file: &Path, staging: &Path) -> Result<(), PackageError> {
         io::copy(&mut entry, &mut out)
             .map_err(io_err(format!("extracting {}", target.display())))?;
     }
+    layout::write_git_hints(staging).map_err(io_err("writing the git hints"))?;
     Ok(())
 }
 

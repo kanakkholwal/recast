@@ -2,6 +2,9 @@
 # Biome (which writes LF) reports every file as unformatted.
 * text=auto eol=lf
 
+# The project document is XML; GitHub highlights it and diffs it by tag.
+*.rcx linguist-language=XML diff=html
+
 *.png binary
 *.jpg binary
 *.jpeg binary

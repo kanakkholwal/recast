@@ -249,6 +249,7 @@ fn write_project(
         fs::create_dir_all(staging.join(dir))
             .map_err(io_err("creating the project directories"))?;
     }
+    layout::write_git_hints(staging).map_err(io_err("writing the git hints"))?;
     let mut state: RenderState =
         serde_json::from_value(bundle.edits.clone()).map_err(|e| MigrateError::BadEntry {
             entry: "edits".into(),

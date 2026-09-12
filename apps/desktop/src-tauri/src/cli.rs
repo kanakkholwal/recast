@@ -429,6 +429,12 @@ enum ProjectAction {
     Pack { dir: String, file: String },
     /// Extract a packaged v3 project into a new directory.
     Unpack { file: String, dir: String },
+    /// Write the document's XSD, so an editor completes and validates `project.rcx`.
+    Schema {
+        /// File to write; prints to stdout when absent.
+        #[arg(long, value_name = "FILE")]
+        out: Option<String>,
+    },
     /// Parse and validate a v3 project's document offline; prints the hash and every finding.
     Doc { dir: String },
     /// The live document from the running app (`doc.show`): canonical text, hash, seq.
@@ -1229,6 +1235,16 @@ fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
             let dir = abs(dir);
             recast_project::package::unpack(&abs(file), &dir).map_err(|e| e.to_string())?;
             emit(&json!({ "unpacked": dir }), cli.format)
+        }
+        ProjectAction::Schema { out } => {
+            let xsd = recast_project::xsd::xsd();
+            let Some(out) = out else {
+                println!("{xsd}");
+                return Ok(());
+            };
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(out));
+            std::fs::write(&path, xsd).map_err(|e| e.to_string())?;
+            emit(&json!({ "schema": path }), cli.format)
         }
         ProjectAction::Doc { dir } => {
             let dir = crate::commands::screenshot::absolutize(std::path::PathBuf::from(dir));

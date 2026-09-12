@@ -18,6 +18,36 @@ pub const SYSTEM: &str = "media/system.wav";
 pub const CURSOR_TRACK: &str = "tracks/cursor.json";
 pub const WORDS_TRACK: &str = "tracks/words.json";
 
+pub const GITATTRIBUTES: &str = ".gitattributes";
+pub const GITIGNORE: &str = ".gitignore";
+
+const GITATTRIBUTES_TEXT: &str =
+    "# A Recast project. The document is XML text; the media are binary.
+project.rcx text eol=lf linguist-language=XML diff=html
+*.json text eol=lf
+media/** binary
+";
+
+const GITIGNORE_TEXT: &str =
+    "# Derived from the document: the write-ahead log, caches and thumbnails.
+.cache/
+";
+
+/// Writes the git hints a fresh project wants, keeping any file the user already has.
+/// # Errors When the filesystem fails.
+pub fn write_git_hints(root: &Path) -> std::io::Result<()> {
+    for (name, text) in [
+        (GITATTRIBUTES, GITATTRIBUTES_TEXT),
+        (GITIGNORE, GITIGNORE_TEXT),
+    ] {
+        let path = root.join(name);
+        if !path.exists() {
+            std::fs::write(path, text)?;
+        }
+    }
+    Ok(())
+}
+
 /// Paths under one project directory. Every path here is relative to `root`, spelled with forward slashes in the document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Layout {
@@ -206,5 +236,29 @@ mod tests {
         assert!(layout.document().ends_with(DOCUMENT));
         assert!(layout.resolve(RECORDING).ends_with("media/recording.mp4"));
         assert!(layout.wal().ends_with(".cache/wal.log"));
+    }
+
+    #[test]
+    fn a_fresh_project_gets_git_hints() {
+        let tmp = tempfile::tempdir().unwrap();
+
+        write_git_hints(tmp.path()).unwrap();
+
+        assert!(std::fs::read_to_string(tmp.path().join(GITATTRIBUTES))
+            .unwrap()
+            .contains("linguist-language=XML"));
+    }
+
+    #[test]
+    fn a_hint_file_the_user_edited_is_left_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join(GITIGNORE), "mine").unwrap();
+
+        write_git_hints(tmp.path()).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join(GITIGNORE)).unwrap(),
+            "mine"
+        );
     }
 }

@@ -1,0 +1,3218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from crates/recast-project/src/schema.rs. Write a copy with `recast project schema`. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:annotation>
+    <xs:documentation>A Recast project document, project.rcx.</xs:documentation>
+  </xs:annotation>
+  <xs:simpleType name="varRef">
+    <xs:annotation>
+      <xs:documentation>A whole-value reference to a &lt;var&gt;, such as $accent.</xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="\$[A-Za-z0-9_-]+"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="recast">
+    <xs:annotation>
+      <xs:documentation>The document root.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="vars"/>
+        <xs:element ref="media"/>
+        <xs:element ref="track"/>
+        <xs:element ref="timeline"/>
+        <xs:element ref="background"/>
+        <xs:element ref="screen"/>
+        <xs:element ref="camera"/>
+        <xs:element ref="cursor"/>
+        <xs:element ref="annotations"/>
+        <xs:element ref="captions"/>
+        <xs:element ref="audio"/>
+        <xs:element ref="sequence"/>
+        <xs:element ref="graphic"/>
+        <xs:element ref="shader"/>
+        <xs:element ref="editor"/>
+        <xs:element ref="unknowns"/>
+      </xs:choice>
+      <xs:attribute name="v" use="required">
+        <xs:annotation>
+          <xs:documentation>Format version.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="aspect">
+        <xs:annotation>
+          <xs:documentation>Output canvas aspect.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="source"/>
+                <xs:enumeration value="16:9"/>
+                <xs:enumeration value="9:16"/>
+                <xs:enumeration value="1:1"/>
+                <xs:enumeration value="1.91:1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="pad">
+        <xs:annotation>
+          <xs:documentation>Padding, percent of the shorter source edge.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="100"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="timebase">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="source-seconds"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="vars">
+    <xs:annotation>
+      <xs:documentation>Typed variables elements reference as `$name`.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="var"/>
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="var">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:string" use="required"/>
+      <xs:attribute name="type" use="required">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="color"/>
+                <xs:enumeration value="number"/>
+                <xs:enumeration value="int"/>
+                <xs:enumeration value="bool"/>
+                <xs:enumeration value="text"/>
+                <xs:enumeration value="select"/>
+                <xs:enumeration value="font"/>
+                <xs:enumeration value="vec2"/>
+                <xs:enumeration value="angle"/>
+                <xs:enumeration value="asset"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="value" type="xs:string" use="required"/>
+      <xs:attribute name="path" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>Inspector grouping.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="min">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="max">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="step">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="options" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>Comma-separated choices for select.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="media">
+    <xs:annotation>
+      <xs:documentation>A media file the document draws or plays.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="kind" use="required">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="video"/>
+                <xs:enumeration value="audio"/>
+                <xs:enumeration value="image"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="src" type="xs:string" use="required"/>
+      <xs:attribute name="w">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="h">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fps">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="offset">
+        <xs:annotation>
+          <xs:documentation>Seconds this track starts after the recording.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="hash" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>Content hash of the file.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="track">
+    <xs:annotation>
+      <xs:documentation>A data track kept in its own file; the body is never inline.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="kind" use="required">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="cursor"/>
+                <xs:enumeration value="words"/>
+                <xs:enumeration value="peaks"/>
+                <xs:enumeration value="silences"/>
+                <xs:enumeration value="ocr"/>
+                <xs:enumeration value="anim"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="src" type="xs:string" use="required"/>
+      <xs:attribute name="hash" type="xs:string"/>
+      <xs:attribute name="n">
+        <xs:annotation>
+          <xs:documentation>Rows in the track.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="span" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>First and last second, space separated.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="ro">
+        <xs:annotation>
+          <xs:documentation>Captured, never edited.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="engine" type="xs:string"/>
+      <xs:attribute name="model" type="xs:string"/>
+      <xs:attribute name="lang" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="timeline">
+    <xs:annotation>
+      <xs:documentation>How the recording is cut down.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="cuts"/>
+        <xs:element ref="split"/>
+        <xs:element ref="clip"/>
+      </xs:choice>
+      <xs:attribute name="src" type="xs:string"/>
+      <xs:attribute name="in">
+        <xs:annotation>
+          <xs:documentation>First kept second.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="out">
+        <xs:annotation>
+          <xs:documentation>Last kept second.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="cuts">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="cut"/>
+        <xs:element ref="dismissed"/>
+      </xs:choice>
+      <xs:attribute name="disabled">
+        <xs:annotation>
+          <xs:documentation>Cuts authored but not applied.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="cut">
+    <xs:annotation>
+      <xs:documentation>A removed range.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur" use="required">
+        <xs:annotation>
+          <xs:documentation>Length in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="source">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="manual"/>
+                <xs:enumeration value="silence"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="dismissed">
+    <xs:annotation>
+      <xs:documentation>A silence suggestion the user declined.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur" use="required">
+        <xs:annotation>
+          <xs:documentation>Length in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="split">
+    <xs:annotation>
+      <xs:documentation>A marker dividing the kept material into clips.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="clip">
+    <xs:annotation>
+      <xs:documentation>Per-clip control: speed, entrance and exit, camera layout, audio.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="enter"/>
+        <xs:element ref="exit"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="speed">
+        <xs:annotation>
+          <xs:documentation>Playback rate.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0.05"/>
+                <xs:maxInclusive value="16"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="gain">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="muted">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="layout">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="pip"/>
+                <xs:enumeration value="splitH"/>
+                <xs:enumeration value="splitV"/>
+                <xs:enumeration value="screenOnly"/>
+                <xs:enumeration value="cameraOnly"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fraction">
+        <xs:annotation>
+          <xs:documentation>Camera share of the frame in a split.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="side">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="start"/>
+                <xs:enumeration value="end"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="enter">
+    <xs:complexType>
+      <xs:attribute name="kind" type="xs:string" use="required"/>
+      <xs:attribute name="dur">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="ease" type="xs:string"/>
+      <xs:attribute name="dir" type="xs:string"/>
+      <xs:attribute name="intensity">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="exit">
+    <xs:complexType>
+      <xs:attribute name="kind" type="xs:string" use="required"/>
+      <xs:attribute name="dur">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="ease" type="xs:string"/>
+      <xs:attribute name="dir" type="xs:string"/>
+      <xs:attribute name="intensity">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="background">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="solid"/>
+        <xs:element ref="gradient"/>
+        <xs:element ref="image"/>
+      </xs:choice>
+      <xs:attribute name="blur">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="solid">
+    <xs:complexType>
+      <xs:attribute name="color" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="gradient">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="stop"/>
+      </xs:choice>
+      <xs:attribute name="angle">
+        <xs:annotation>
+          <xs:documentation>Degrees, CSS convention.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="stop">
+    <xs:complexType>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Position along the line.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="100"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="color" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="image">
+    <xs:complexType>
+      <xs:attribute name="src" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="screen">
+    <xs:annotation>
+      <xs:documentation>The recorded screen.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="corner"/>
+        <xs:element ref="shadow"/>
+        <xs:element ref="material"/>
+        <xs:element ref="zooms"/>
+        <xs:element ref="bind"/>
+        <xs:element ref="transform"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="src" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="corner">
+    <xs:complexType>
+      <xs:attribute name="pct" use="required">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="100"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="material">
+    <xs:annotation>
+      <xs:documentation>How the layer catches light: a few numbers, never a light model. Absent is unlit, which is how every project before it rendered.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="contact">
+        <xs:annotation>
+          <xs:documentation>How much the further parts of a tilted layer darken.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rim">
+        <xs:annotation>
+          <xs:documentation>How much its edge lifts.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rimWidth">
+        <xs:annotation>
+          <xs:documentation>How far in the rim reaches, share of the shorter side.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="shadow">
+    <xs:complexType>
+      <xs:attribute name="blur">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="spread">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dy">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="opacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="color" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="zooms">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="zoom"/>
+      </xs:choice>
+      <xs:attribute name="disabled">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="auto">
+        <xs:annotation>
+          <xs:documentation>Auto-zoom suggestions on.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="applied">
+        <xs:annotation>
+          <xs:documentation>Suggestions were applied.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="zoom">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur" use="required">
+        <xs:annotation>
+          <xs:documentation>Length in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="scale">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="1"/>
+                <xs:maxInclusive value="3"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="cx">
+        <xs:annotation>
+          <xs:documentation>Focus x in the video.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="cy">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampIn">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampOut">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="easeIn" type="xs:string"/>
+      <xs:attribute name="easeOut" type="xs:string"/>
+      <xs:attribute name="blur">
+        <xs:annotation>
+          <xs:documentation>Motion blur strength.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="hidden">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="source">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="manual"/>
+                <xs:enumeration value="auto"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="camera">
+    <xs:annotation>
+      <xs:documentation>The camera bubble.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="bind"/>
+        <xs:element ref="transform"/>
+        <xs:element ref="material"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="src" type="xs:string"/>
+      <xs:attribute name="enabled">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="shape">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="circle"/>
+                <xs:enumeration value="rounded"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="corner">
+        <xs:annotation>
+          <xs:documentation>Rounding for the rounded shape.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="mirror">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="shadow">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="preset" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>Animation preset.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="x">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="w">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="h">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="space">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="video"/>
+                <xs:enumeration value="canvas"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="layoutTransition">
+        <xs:annotation>
+          <xs:documentation>Seconds a layout change takes, output time.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="layoutEase" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="bind">
+    <xs:annotation>
+      <xs:documentation>A property driven by a signal through a map.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="key"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="prop" type="xs:string" use="required">
+        <xs:annotation>
+          <xs:documentation>Space-separated property names.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="src" type="xs:string" use="required">
+        <xs:annotation>
+          <xs:documentation>Signal: time, cursor, cursor.x, cursor.y, cursor.pressed, cursor.idle, zoom.scale, zoom.center, audio.level(track), word.active, layer(id).prop.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="map" use="required">
+        <xs:annotation>
+          <xs:documentation>No lag map: a frame depends only on its own time.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="keys"/>
+                <xs:enumeration value="linear"/>
+                <xs:enumeration value="wave"/>
+                <xs:enumeration value="step"/>
+                <xs:enumeration value="dodge"/>
+                <xs:enumeration value="clamp"/>
+                <xs:enumeration value="follow"/>
+                <xs:enumeration value="format"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="strength">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="ease" type="xs:string"/>
+      <xs:attribute name="period">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="from">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="to">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="loop">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="in">
+        <xs:annotation>
+          <xs:documentation>Window start on the element's clock; absent means the whole element.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="out">
+        <xs:annotation>
+          <xs:documentation>Window end.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="key">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="x">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="w">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="h">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="ease" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="cursor">
+    <xs:annotation>
+      <xs:documentation>The pointer lane.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="track" type="xs:string"/>
+      <xs:attribute name="enabled">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="style" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>dot or an extension sprite id.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="size">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="smoothing">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="snap">
+        <xs:annotation>
+          <xs:documentation>Snap to click positions.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="snapWindow">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="highlight">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="highlightColor" type="xs:string"/>
+      <xs:attribute name="highlightOpacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="idleHide">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="idleTimeout">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="blur">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="bounce">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="bounceDur">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="sway">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="ease" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>Motion easing between samples.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="annotations">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="rect"/>
+        <xs:element ref="ellipse"/>
+        <xs:element ref="arrow"/>
+        <xs:element ref="img"/>
+        <xs:element ref="blur"/>
+        <xs:element ref="text"/>
+      </xs:choice>
+      <xs:attribute name="disabled">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="rect">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="glow"/>
+        <xs:element ref="bind"/>
+        <xs:element ref="transform"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur" use="required">
+        <xs:annotation>
+          <xs:documentation>Length in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampIn">
+        <xs:annotation>
+          <xs:documentation>Fade-in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampOut">
+        <xs:annotation>
+          <xs:documentation>Fade-out seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="easeIn" type="xs:string"/>
+      <xs:attribute name="easeOut" type="xs:string"/>
+      <xs:attribute name="stroke">
+        <xs:annotation>
+          <xs:documentation>Stroke width, px.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="strokeColor" type="xs:string"/>
+      <xs:attribute name="strokeStyle">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="solid"/>
+                <xs:enumeration value="dashed"/>
+                <xs:enumeration value="dotted"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fill" type="xs:string"/>
+      <xs:attribute name="opacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="z">
+        <xs:annotation>
+          <xs:documentation>Stacking order within annotations.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="locked">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="hidden">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="space">
+        <xs:annotation>
+          <xs:documentation>Coordinate space; video is the default.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="video"/>
+                <xs:enumeration value="frame"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="x">
+        <xs:annotation>
+          <xs:documentation>Left, fraction of the space.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y">
+        <xs:annotation>
+          <xs:documentation>Top.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="w">
+        <xs:annotation>
+          <xs:documentation>Width.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="h">
+        <xs:annotation>
+          <xs:documentation>Height.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="radius">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="ellipse">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="glow"/>
+        <xs:element ref="bind"/>
+        <xs:element ref="transform"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur" use="required">
+        <xs:annotation>
+          <xs:documentation>Length in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampIn">
+        <xs:annotation>
+          <xs:documentation>Fade-in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampOut">
+        <xs:annotation>
+          <xs:documentation>Fade-out seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="easeIn" type="xs:string"/>
+      <xs:attribute name="easeOut" type="xs:string"/>
+      <xs:attribute name="stroke">
+        <xs:annotation>
+          <xs:documentation>Stroke width, px.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="strokeColor" type="xs:string"/>
+      <xs:attribute name="strokeStyle">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="solid"/>
+                <xs:enumeration value="dashed"/>
+                <xs:enumeration value="dotted"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fill" type="xs:string"/>
+      <xs:attribute name="opacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="z">
+        <xs:annotation>
+          <xs:documentation>Stacking order within annotations.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="locked">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="hidden">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="space">
+        <xs:annotation>
+          <xs:documentation>Coordinate space; video is the default.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="video"/>
+                <xs:enumeration value="frame"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="x">
+        <xs:annotation>
+          <xs:documentation>Left, fraction of the space.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y">
+        <xs:annotation>
+          <xs:documentation>Top.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="w">
+        <xs:annotation>
+          <xs:documentation>Width.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="h">
+        <xs:annotation>
+          <xs:documentation>Height.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="arrow">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="glow"/>
+        <xs:element ref="bind"/>
+        <xs:element ref="transform"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur" use="required">
+        <xs:annotation>
+          <xs:documentation>Length in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampIn">
+        <xs:annotation>
+          <xs:documentation>Fade-in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampOut">
+        <xs:annotation>
+          <xs:documentation>Fade-out seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="easeIn" type="xs:string"/>
+      <xs:attribute name="easeOut" type="xs:string"/>
+      <xs:attribute name="stroke">
+        <xs:annotation>
+          <xs:documentation>Stroke width, px.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="strokeColor" type="xs:string"/>
+      <xs:attribute name="strokeStyle">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="solid"/>
+                <xs:enumeration value="dashed"/>
+                <xs:enumeration value="dotted"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fill" type="xs:string"/>
+      <xs:attribute name="opacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="z">
+        <xs:annotation>
+          <xs:documentation>Stacking order within annotations.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="locked">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="hidden">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="space">
+        <xs:annotation>
+          <xs:documentation>Coordinate space; video is the default.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="video"/>
+                <xs:enumeration value="frame"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="x1">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y1">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="x2">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y2">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="head">
+        <xs:annotation>
+          <xs:documentation>Head length as a fraction of the line.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="img">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="glow"/>
+        <xs:element ref="bind"/>
+        <xs:element ref="transform"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur" use="required">
+        <xs:annotation>
+          <xs:documentation>Length in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampIn">
+        <xs:annotation>
+          <xs:documentation>Fade-in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampOut">
+        <xs:annotation>
+          <xs:documentation>Fade-out seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="easeIn" type="xs:string"/>
+      <xs:attribute name="easeOut" type="xs:string"/>
+      <xs:attribute name="stroke">
+        <xs:annotation>
+          <xs:documentation>Stroke width, px.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="strokeColor" type="xs:string"/>
+      <xs:attribute name="strokeStyle">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="solid"/>
+                <xs:enumeration value="dashed"/>
+                <xs:enumeration value="dotted"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fill" type="xs:string"/>
+      <xs:attribute name="opacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="z">
+        <xs:annotation>
+          <xs:documentation>Stacking order within annotations.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="locked">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="hidden">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="space">
+        <xs:annotation>
+          <xs:documentation>Coordinate space; video is the default.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="video"/>
+                <xs:enumeration value="frame"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="x">
+        <xs:annotation>
+          <xs:documentation>Left, fraction of the space.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y">
+        <xs:annotation>
+          <xs:documentation>Top.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="w">
+        <xs:annotation>
+          <xs:documentation>Width.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="h">
+        <xs:annotation>
+          <xs:documentation>Height.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="src" type="xs:string" use="required"/>
+      <xs:attribute name="radius">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fit">
+        <xs:annotation>
+          <xs:documentation>How it fills its box when the aspects disagree. Sequence items only.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="cover"/>
+                <xs:enumeration value="contain"/>
+                <xs:enumeration value="fill"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="blur">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="glow"/>
+        <xs:element ref="bind"/>
+        <xs:element ref="transform"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur" use="required">
+        <xs:annotation>
+          <xs:documentation>Length in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampIn">
+        <xs:annotation>
+          <xs:documentation>Fade-in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampOut">
+        <xs:annotation>
+          <xs:documentation>Fade-out seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="easeIn" type="xs:string"/>
+      <xs:attribute name="easeOut" type="xs:string"/>
+      <xs:attribute name="stroke">
+        <xs:annotation>
+          <xs:documentation>Stroke width, px.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="strokeColor" type="xs:string"/>
+      <xs:attribute name="strokeStyle">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="solid"/>
+                <xs:enumeration value="dashed"/>
+                <xs:enumeration value="dotted"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fill" type="xs:string"/>
+      <xs:attribute name="opacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="z">
+        <xs:annotation>
+          <xs:documentation>Stacking order within annotations.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="locked">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="hidden">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="space">
+        <xs:annotation>
+          <xs:documentation>Coordinate space; video is the default.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="video"/>
+                <xs:enumeration value="frame"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="x">
+        <xs:annotation>
+          <xs:documentation>Left, fraction of the space.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y">
+        <xs:annotation>
+          <xs:documentation>Top.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="w">
+        <xs:annotation>
+          <xs:documentation>Width.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="h">
+        <xs:annotation>
+          <xs:documentation>Height.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="strength">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="variant" type="xs:string"/>
+      <xs:attribute name="tint" type="xs:string"/>
+      <xs:attribute name="radius">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="text">
+    <xs:annotation>
+      <xs:documentation>Text content is the element body.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType mixed="true">
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="glow"/>
+        <xs:element ref="bind"/>
+        <xs:element ref="transform"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="at" use="required">
+        <xs:annotation>
+          <xs:documentation>Start, source seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur" use="required">
+        <xs:annotation>
+          <xs:documentation>Length in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampIn">
+        <xs:annotation>
+          <xs:documentation>Fade-in seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rampOut">
+        <xs:annotation>
+          <xs:documentation>Fade-out seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="easeIn" type="xs:string"/>
+      <xs:attribute name="easeOut" type="xs:string"/>
+      <xs:attribute name="stroke">
+        <xs:annotation>
+          <xs:documentation>Stroke width, px.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="strokeColor" type="xs:string"/>
+      <xs:attribute name="strokeStyle">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="solid"/>
+                <xs:enumeration value="dashed"/>
+                <xs:enumeration value="dotted"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fill" type="xs:string"/>
+      <xs:attribute name="opacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="z">
+        <xs:annotation>
+          <xs:documentation>Stacking order within annotations.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="locked">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="hidden">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="space">
+        <xs:annotation>
+          <xs:documentation>Coordinate space; video is the default.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="video"/>
+                <xs:enumeration value="frame"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="x">
+        <xs:annotation>
+          <xs:documentation>Left, fraction of the space.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y">
+        <xs:annotation>
+          <xs:documentation>Top.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="w">
+        <xs:annotation>
+          <xs:documentation>Width.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="h">
+        <xs:annotation>
+          <xs:documentation>Height.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="font" type="xs:string"/>
+      <xs:attribute name="weight">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="size">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="color" type="xs:string"/>
+      <xs:attribute name="align">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="left"/>
+                <xs:enumeration value="center"/>
+                <xs:enumeration value="right"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="lineHeight">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="transform">
+    <xs:annotation>
+      <xs:documentation>The layer's 3D transform, drawn as a homography. Offsets are frame fractions (z in frame heights, away is positive), turns in degrees.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="x">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="y">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="z">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rx">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="ry">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="rz">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="scale">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="ax">
+        <xs:annotation>
+          <xs:documentation>Anchor x within the card.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="ay">
+        <xs:annotation>
+          <xs:documentation>Anchor y within the card.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="persp">
+        <xs:annotation>
+          <xs:documentation>Focal length in frame heights; default 2.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="glow">
+    <xs:complexType>
+      <xs:attribute name="color" type="xs:string"/>
+      <xs:attribute name="blur">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="opacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="captions">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="animation"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="track" type="xs:string"/>
+      <xs:attribute name="enabled">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="font" type="xs:string"/>
+      <xs:attribute name="weight">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="size">
+        <xs:annotation>
+          <xs:documentation>Font size, percent of the video height.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="100"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="pos">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="top"/>
+                <xs:enumeration value="bottom"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="align">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="left"/>
+                <xs:enumeration value="center"/>
+                <xs:enumeration value="right"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="offset">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="100"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="color" type="xs:string"/>
+      <xs:attribute name="muted" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>Colour of words not yet spoken.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="uppercase">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="spacing">
+        <xs:annotation>
+          <xs:documentation>Letter spacing.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="bg" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>Background style name.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="bgColor" type="xs:string"/>
+      <xs:attribute name="bgOpacity">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="padX">
+        <xs:annotation>
+          <xs:documentation>Em.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="padY">
+        <xs:annotation>
+          <xs:documentation>Em.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="radius">
+        <xs:annotation>
+          <xs:documentation>Em.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="lineHeight">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="outline">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="outlineColor" type="xs:string"/>
+      <xs:attribute name="maxLines">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="maxChars">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="animation">
+    <xs:complexType>
+      <xs:attribute name="chunk" type="xs:string"/>
+      <xs:attribute name="size">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:integer varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="emphasis" type="xs:string"/>
+      <xs:attribute name="emphasisColor" type="xs:string"/>
+      <xs:attribute name="highlight" type="xs:string"/>
+      <xs:attribute name="entrance" type="xs:string"/>
+      <xs:attribute name="entranceDur">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="holdGaps">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="audio">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="system"/>
+        <xs:element ref="mic"/>
+        <xs:element ref="voice"/>
+        <xs:element ref="music"/>
+      </xs:choice>
+      <xs:attribute name="gain">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="muted">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fadeIn">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fadeOut">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="normalize">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="system">
+    <xs:annotation>
+      <xs:documentation>System audio.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="src" type="xs:string"/>
+      <xs:attribute name="gain">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="muted">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="mic">
+    <xs:annotation>
+      <xs:documentation>Microphone.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="src" type="xs:string"/>
+      <xs:attribute name="gain">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="muted">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="voice">
+    <xs:annotation>
+      <xs:documentation>A detached voice track.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="src" type="xs:string" use="required"/>
+      <xs:attribute name="gain">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="muted">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="music">
+    <xs:annotation>
+      <xs:documentation>A clip placed on the OUTPUT timeline.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="src" type="xs:string" use="required"/>
+      <xs:attribute name="axis">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="output"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="at">
+        <xs:annotation>
+          <xs:documentation>Output seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="offset">
+        <xs:annotation>
+          <xs:documentation>Seconds into the file.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="gain">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+                <xs:maxInclusive value="1"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="muted">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fadeIn">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="fadeOut">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="loop">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="duck">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="true"/>
+                <xs:enumeration value="false"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="provider" type="xs:string"/>
+      <xs:attribute name="track" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>Provider track id.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="attribution" type="xs:string"/>
+      <xs:attribute name="license" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="sequence">
+    <xs:annotation>
+      <xs:documentation>An authored composition: items on the OUTPUT clock, with no recording underneath. Their `at` and `dur` are output seconds, unlike the same elements inside &lt;annotations&gt;.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="img"/>
+        <xs:element ref="text"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="transition">
+        <xs:annotation>
+          <xs:documentation>How one item gives way to the next.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="none"/>
+                <xs:enumeration value="dissolve"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="transitionDur">
+        <xs:annotation>
+          <xs:documentation>How long a transition takes, in output seconds.</xs:documentation>
+        </xs:annotation>
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:decimal">
+                <xs:minInclusive value="0"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="graphic">
+    <xs:annotation>
+      <xs:documentation>A component instance; other attributes are its parameters.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="component" type="xs:string" use="required">
+        <xs:annotation>
+          <xs:documentation>name@version</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="at">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:anyAttribute namespace="##any" processContents="skip"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="shader">
+    <xs:annotation>
+      <xs:documentation>A component instance painted over the screen card; its uniforms are the component's parameters.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="uniform"/>
+      </xs:choice>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="component" type="xs:string" use="required">
+        <xs:annotation>
+          <xs:documentation>name@major.minor of a registered screen component.</xs:documentation>
+        </xs:annotation>
+      </xs:attribute>
+      <xs:attribute name="at">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="dur">
+        <xs:simpleType>
+          <xs:union memberTypes="xs:decimal varRef"/>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="uniform">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:string" use="required"/>
+      <xs:attribute name="value" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="editor">
+    <xs:annotation>
+      <xs:documentation>UI state the engine ignores.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:attribute name="layout">
+        <xs:simpleType>
+          <xs:union memberTypes="varRef">
+            <xs:simpleType>
+              <xs:restriction base="xs:token">
+                <xs:enumeration value="auto"/>
+                <xs:enumeration value="crop"/>
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:union>
+        </xs:simpleType>
+      </xs:attribute>
+      <xs:attribute name="preset" type="xs:string"/>
+      <xs:attribute name="motionTone" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="unknowns">
+    <xs:annotation>
+      <xs:documentation>Keys a migration could not place; preserved, never meaningful.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="unknown"/>
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="unknown">
+    <xs:complexType>
+      <xs:attribute name="key" type="xs:string" use="required"/>
+      <xs:attribute name="json" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

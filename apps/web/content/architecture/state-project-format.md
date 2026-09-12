@@ -184,6 +184,8 @@ Name.recast/
   tracks/              cursor.json, words.json (pointed at by <track src>)
   branches/            agent proposals
   .cache/              wal.log, store.json, edits.json, thumbs (never packaged)
+  .gitattributes       the document is XML text, the media are binary
+  .gitignore           .cache/ is derived, so it stays out of git
 ```
 
 `crates/recast-project` owns the format: the schema table, parser and
@@ -200,6 +202,30 @@ migrated, one written by `export_project_archive` is unpacked.
 `export_project_archive` packs a folder into a single `.recast` and leaves the
 folder as the project. `recast project pack` and `recast project unpack` are the
 same two operations on the CLI.
+
+**Editing the document by hand.** `project.rcx` is XML, so an editor only needs
+telling. Every new project carries a `.gitattributes` marking the document as
+XML for GitHub and a `.gitignore` for `.cache/`, and neither is rewritten if you
+change it. The vocabulary is published as an XSD generated from the schema table
+(`crates/recast-project/schema/project.xsd`, kept honest by
+`the_checked_in_schema_matches_the_table`); `recast project schema --out
+project.xsd` writes a copy beside a project. Point an editor at that file
+(`xml.fileAssociations` in VS Code) for attribute completion, enum values, the
+schema's own doc strings and inline validation.
+
+```json
+"xml.fileAssociations": [
+  { "pattern": "**/*.rcx", "systemId": "./crates/recast-project/schema/project.xsd" }
+]
+```
+
+Two caveats. The document carries no XML declaration and no
+`xsi:noNamespaceSchemaLocation`, because the hash is over the canonical text: a
+header line would move every `DocHash` and invalidate every open branch, which
+is worth doing at the next `v` rather than on its own. And the XSD is stricter
+in kind than Recast, which treats an unknown element or attribute as a warning
+and keeps it: a validator calls that an error, so a document written by a newer
+Recast reports errors until the schema is regenerated.
 
 **While the app runs, the core's in-memory document is the truth.** Every
 write, the GUI's whole-state save included, becomes one sequenced op batch on

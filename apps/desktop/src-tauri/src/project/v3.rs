@@ -168,6 +168,7 @@ pub fn write_project(request: ProjectWriteRequest) -> Result<PathBuf> {
     ] {
         fs::create_dir_all(root.join(dir)).context("creating the project directories")?;
     }
+    layout::write_git_hints(root).context("writing the git hints")?;
     move_into(&request.recording_path, &layout.resolve(layout::RECORDING))?;
     move_into(&request.cursor_path, &layout.resolve(layout::CURSOR_TRACK))?;
     for (source, target) in [

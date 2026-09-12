@@ -17,6 +17,7 @@ pub mod serialize;
 pub mod validate;
 pub mod value;
 pub mod vars;
+pub mod xsd;
 
 #[cfg(feature = "native")]
 pub mod layout;
