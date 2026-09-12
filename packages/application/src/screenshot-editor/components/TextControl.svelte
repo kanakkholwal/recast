@@ -27,7 +27,9 @@ const SWATCHES = [
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { ColorField } from "@recast/ui/color-field";
   import { Button } from "@recast/ui/button";
+  import { cn } from "@recast/ui/utils";
   import { AlignCenter, AlignLeft, AlignRight, Plus, Trash2, Type } from "@recast/icons";
+  import { SWATCH_SELECTED } from "../selection";
   import type { TextAlign, TextOverlay } from "../types";
   import {
     FONT_CATEGORY_LABELS,
@@ -168,10 +170,7 @@ const SWATCHES = [
       {#each SWATCHES as c (c)}
         <button
           type="button"
-          class="size-6 rounded-full border"
-          class:ring-2={sel.color.toLowerCase() === c}
-          class:ring-foreground={sel.color.toLowerCase() === c}
-          class:ring-offset-1={sel.color.toLowerCase() === c}
+          class={cn("size-6 rounded-full border", sel.color.toLowerCase() === c && SWATCH_SELECTED)}
           style:background-color={c}
           aria-label={`Color ${c}`}
           onclick={() => update({ color: c })}

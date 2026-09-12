@@ -81,6 +81,8 @@ export class ScreenshotEditorState {
 	// `playhead` is TIMELINE time; the clip maps it into preset-local time, so a clip can move and stretch untouched.
 	animationId = $state<string | null>(null);
 	playing = $state(false);
+	// True while the Tilt pad drags, so the stage tracks the pointer 1:1 with no eased lag.
+	tiltDragging = $state(false);
 	playhead = $state(0); // ms along the timeline
 	timelineDuration = $state(5000); // ms of track
 	loop = $state(true);

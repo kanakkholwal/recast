@@ -82,7 +82,7 @@ export interface AnimationControlProps {
       <button
         type="button"
         class={cn(
-          "rounded-lg border px-2 py-2 text-left text-xs font-medium transition-colors",
+          "rounded-lg border px-2 py-2 text-left text-xs font-medium transition-[colors,transform] motion-safe:active:scale-[0.98]",
           selected
             ? "border-transparent bg-foreground text-background"
             : "border-border bg-background hover:bg-accent text-foreground",

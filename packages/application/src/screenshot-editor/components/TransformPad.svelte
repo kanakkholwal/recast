@@ -44,9 +44,13 @@ const SNAP: { x: number; y: number; label: string }[] = [
 
   function startDrag(e: PointerEvent) {
     e.preventDefault();
+    padEl?.setPointerCapture(e.pointerId);
+    editor.tiltDragging = true;
     setFromPoint(e.clientX, e.clientY);
     const move = (ev: PointerEvent) => setFromPoint(ev.clientX, ev.clientY);
     const up = () => {
+      editor.tiltDragging = false;
+      padEl?.releasePointerCapture(e.pointerId);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };

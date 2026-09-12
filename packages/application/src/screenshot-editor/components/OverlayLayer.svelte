@@ -22,6 +22,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
   function startDrag(e: PointerEvent, ov: Overlay) {
     if (editingId === ov.id || !layerEl) return;
     e.stopPropagation();
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
     editor.selectOverlay(ov.id);
     const rect = layerEl.getBoundingClientRect();
     const sx = e.clientX;
@@ -35,6 +37,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
       });
     };
     const up = () => {
+      target.releasePointerCapture(e.pointerId);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -46,6 +49,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
   function startResizeImage(e: PointerEvent, ov: Overlay) {
     if (ov.type !== "image" || !layerEl) return;
     e.stopPropagation();
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
     editor.selectOverlay(ov.id);
     const rect = layerEl.getBoundingClientRect();
     const sx = e.clientX;
@@ -56,6 +61,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
       });
     };
     const up = () => {
+      target.releasePointerCapture(e.pointerId);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -67,6 +73,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
   function startResize(e: PointerEvent, ov: Overlay) {
     if ((ov.type !== "shape" && ov.type !== "blur") || !layerEl) return;
     e.stopPropagation();
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
     editor.selectOverlay(ov.id);
     const rect = layerEl.getBoundingClientRect();
     const sx = e.clientX;
@@ -80,6 +88,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
       });
     };
     const up = () => {
+      target.releasePointerCapture(e.pointerId);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
@@ -269,10 +278,12 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
         {#if editor.selectedId === ov.id}
           <button
             type="button"
-            class="border-primary bg-background absolute -right-1.5 -bottom-1.5 size-3 cursor-nwse-resize rounded-full border"
+            class="absolute -right-2.5 -bottom-2.5 grid size-5 cursor-nwse-resize place-items-center"
             aria-label="Resize"
             onpointerdown={(e) => startResize(e, ov)}
-          ></button>
+          >
+            <span class="border-primary bg-background size-3 rounded-full border"></span>
+          </button>
         {/if}
       </div>
     {:else if ov.type === "blur"}
@@ -296,10 +307,12 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
         {#if editor.selectedId === ov.id}
           <button
             type="button"
-            class="border-primary bg-background absolute -right-1.5 -bottom-1.5 size-3 cursor-nwse-resize rounded-full border"
+            class="absolute -right-2.5 -bottom-2.5 grid size-5 cursor-nwse-resize place-items-center"
             aria-label="Resize"
             onpointerdown={(e) => startResize(e, ov)}
-          ></button>
+          >
+            <span class="border-primary bg-background size-3 rounded-full border"></span>
+          </button>
         {/if}
       </div>
     {:else if ov.type === "image"}
@@ -329,10 +342,12 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
         {#if editor.selectedId === ov.id}
           <button
             type="button"
-            class="border-primary bg-background absolute -right-1.5 -bottom-1.5 size-3 cursor-nwse-resize rounded-full border"
+            class="absolute -right-2.5 -bottom-2.5 grid size-5 cursor-nwse-resize place-items-center"
             aria-label="Resize"
             onpointerdown={(e) => startResizeImage(e, ov)}
-          ></button>
+          >
+            <span class="border-primary bg-background size-3 rounded-full border"></span>
+          </button>
         {/if}
       </div>
     {/if}

@@ -102,7 +102,7 @@ export interface EditorStageProps {
         class="recast-shot-tilt"
         style:transform={framedTransform}
         style:opacity={framedOpacity}
-        style:transition={anim ? "none" : undefined}
+        style:transition={anim || editor.tiltDragging ? "none" : undefined}
       >
         {#if editor.mockup.kind !== "none"}
           <MockupFrame
@@ -315,6 +315,10 @@ export interface EditorStageProps {
     width: 100%;
     height: 100%;
     transform-style: preserve-3d;
-    transition: transform 120ms ease-out;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .recast-shot-tilt {
+      transition: transform 120ms ease-out;
+    }
   }
 </style>

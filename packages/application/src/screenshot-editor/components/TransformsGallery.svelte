@@ -9,6 +9,7 @@ export interface TransformsGalleryProps {
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
   import { cn } from "@recast/ui/utils";
+  import { SWATCH_SELECTED } from "../selection";
   import { TRANSFORM_PRESET_CATEGORIES } from "../transform-presets";
   import { transformCss } from "../render";
   import type { Transform3D } from "../types";
@@ -42,9 +43,9 @@ export interface TransformsGalleryProps {
         <button
           type="button"
           class={cn(
-            "group/tile relative aspect-[4/3] overflow-hidden rounded-md border transition",
+            "group/tile relative aspect-[4/3] overflow-hidden rounded-md border transition motion-safe:active:scale-[0.98]",
             isActive(preset.transform)
-              ? "border-foreground/60 ring-foreground/60 ring-2"
+              ? cn("border-transparent", SWATCH_SELECTED)
               : "border-border hover:bg-accent",
           )}
           title={preset.name}

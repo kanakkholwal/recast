@@ -26,6 +26,7 @@ const PANEL_STEP = 16;
   import * as Tabs from "@recast/ui/tabs";
   import * as Popover from "@recast/ui/popover";
   import * as Select from "@recast/ui/select";
+  import * as Dialog from "@recast/ui/dialog";
   import { Segmented } from "@recast/ui/segmented";
   import { PanelSection } from "@recast/ui/panel-section";
   import {
@@ -273,7 +274,11 @@ const PANEL_STEP = 16;
     return () => clearTimeout(id);
   });
 
+  let showClearConfirm = $state(false);
+
+  // Wipes the image and the saved draft, so confirm first: there is no undo past clear.
   function clearWorkspace() {
+    showClearConfirm = false;
     editor.clear();
     void clearDraft();
     draftStatus = "idle";
@@ -473,7 +478,7 @@ const PANEL_STEP = 16;
         {/if}
 
         <div class="bg-border mx-0.5 h-5 w-px"></div>
-        <Button variant="ghost" size="sm" onclick={clearWorkspace}>
+        <Button variant="ghost" size="sm" onclick={() => (showClearConfirm = true)}>
           <Trash2 />
           Remove
         </Button>
@@ -635,5 +640,23 @@ const PANEL_STEP = 16;
         </div>
       </aside>
     </div>
+
+    <Dialog.Root bind:open={showClearConfirm}>
+      <Dialog.Content class="max-w-sm">
+        <Dialog.Header>
+          <Dialog.Title>Remove this screenshot?</Dialog.Title>
+          <Dialog.Description>
+            This clears the image and the saved draft. It cannot be undone.
+          </Dialog.Description>
+        </Dialog.Header>
+        <Dialog.Footer>
+          <Button variant="ghost" size="sm" onclick={() => (showClearConfirm = false)}>Cancel</Button>
+          <Button variant="destructive" size="sm" onclick={clearWorkspace}>
+            <Trash2 />
+            Remove
+          </Button>
+        </Dialog.Footer>
+      </Dialog.Content>
+    </Dialog.Root>
   {/if}
 </div>
