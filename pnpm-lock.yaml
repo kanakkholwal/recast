@@ -191,8 +191,8 @@ importers:
         specifier: ^12.33.0
         version: 12.33.0
       '@docvia/source':
-        specifier: ^0.3.1
-        version: 0.3.1
+        specifier: ^0.4.0
+        version: 0.4.0
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
@@ -256,13 +256,13 @@ importers:
     devDependencies:
       '@docvia/cli':
         specifier: ^1.0.0
-        version: 1.0.0(@docvia/source@0.3.1)
+        version: 1.0.0(@docvia/source@0.4.0)
       '@docvia/plugin-shiki':
         specifier: ^0.2.2
         version: 0.2.2
       '@docvia/plugin-vite':
         specifier: ^1.0.0
-        version: 1.0.0(@docvia/source@0.3.1)
+        version: 1.0.0(@docvia/source@0.4.0)
       '@docvia/renderer-svelte':
         specifier: ^0.2.4
         version: 0.2.4
@@ -1052,10 +1052,6 @@ packages:
     resolution: {integrity: sha512-Zh2GxqIQvZxWIHVIoALp4wHCbJHdoSS+SuWs0CTSbKJfXeJMBMboZ6o11TkP2GYbsfFG3cbftXV+BIqBaD3nlw==}
     engines: {node: '>=20.0.0'}
 
-  '@docvia/ir@0.3.0':
-    resolution: {integrity: sha512-tqbsEHE/tvuGfvctvOX8eo8WbQ0lmAJg5g4gN75tkcjGMOq5EMQs9ayz2lPkQwJF+ryT6kAnQgS4IgdYT9kH5w==}
-    engines: {node: '>=20.0.0'}
-
   '@docvia/ir@0.4.0':
     resolution: {integrity: sha512-6Jfcn2al80xhsxZzOANh5I8OTWUrVgVrkj6BZ8M89g61CgpDd17wENvSX8Re5crSeSnCLKwnHwSIDEnRQEttWg==}
     engines: {node: '>=20.0.0'}
@@ -1074,10 +1070,6 @@ packages:
     resolution: {integrity: sha512-P1D6shCoBEY4ybzc7G8pRYQTHlv+Vd1FLiotJArvn/8jp+pjAiXT5wKPiV83vAhmOTkCI/u82ptC8uE8j0YRlg==}
     engines: {node: '>=20.0.0'}
 
-  '@docvia/renderer-core@0.2.2':
-    resolution: {integrity: sha512-rw8Md+/GWS+gzkdUinL4SEumgrPOyuXjX8t8g/0E6lYiIHiS0khA60YQaPkyMatsLjRUgWLjyTSONsIZmJubCw==}
-    engines: {node: '>=20.0.0'}
-
   '@docvia/renderer-core@0.2.3':
     resolution: {integrity: sha512-seWcYk/y0XNqEeY6/lLhjn2mrt3PAxUyrFiBtFTKXALlQ872KTzVs6KLHiHXQsM4UP0ZYgRnwm/6xnD4ngkJJA==}
     engines: {node: '>=20.0.0'}
@@ -1090,16 +1082,12 @@ packages:
     resolution: {integrity: sha512-XG5FaVqQl7G4/L5oVmR2/tI9rwBXiVUHGsu9Pi5/pG7Wg+WtpRioW2edMV9Na+jMblmELBmApsPGFCmi5eIPVg==}
     engines: {node: '>=20.0.0'}
 
-  '@docvia/schema@0.3.0':
-    resolution: {integrity: sha512-PoCVvmNcKg8zsw9Y5BsBjUHdGVTaLnq/IXq86WZeWMnoqF9Ny84Fy4aPnJ5KgXEF3YtctzDvjImvbcPflfZc7A==}
-    engines: {node: '>=20.0.0'}
-
   '@docvia/schema@0.4.0':
     resolution: {integrity: sha512-q3o9Q5WujW6LaeSNw/M2JH6RQ68XPBOEIkOhZqK158yGhi3UmwpzJ+dR1zRf46TMzi0M2ZXWoOND2XvBEBrmXA==}
     engines: {node: '>=20.0.0'}
 
-  '@docvia/source@0.3.1':
-    resolution: {integrity: sha512-YTFpvQez5QPcZAhfMUQKjEpatbZB0mo/jUE+Tih9Mu2nrOXRBa01yNGA+JNelDg9lGmn03XJln1J1/E5rTCEhQ==}
+  '@docvia/source@0.4.0':
+    resolution: {integrity: sha512-CW/zwjvS5PgP7x7Fp/pNJO5HM4sEd1YxGCsfFqklSDIbLw9JefMYXBb1mg59bJplkXYFO8BODOy1ZWLPadykww==}
     engines: {node: '>=20.0.0'}
 
   '@drizzle-team/brocli@0.10.2':
@@ -6819,13 +6807,13 @@ snapshots:
 
   '@dagrejs/graphlib@3.0.4': {}
 
-  '@docvia/cli@1.0.0(@docvia/source@0.3.1)':
+  '@docvia/cli@1.0.0(@docvia/source@0.4.0)':
     dependencies:
       '@docvia/compiler': 0.2.3
       '@docvia/ir': 0.4.0
       '@docvia/plugins': 0.3.1
       '@docvia/runtime': 0.5.0
-      '@docvia/source': 0.3.1
+      '@docvia/source': 0.4.0
       chokidar: 5.0.0
       commander: 14.0.3
       sirv: 3.0.2
@@ -6853,11 +6841,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@docvia/ir@0.3.0':
-    dependencies:
-      '@standard-schema/spec': 1.1.0
-      github-slugger: 2.0.0
-
   '@docvia/ir@0.4.0':
     dependencies:
       '@standard-schema/spec': 1.1.0
@@ -6868,14 +6851,14 @@ snapshots:
       '@docvia/ir': 0.4.0
       shiki: 4.4.3
 
-  '@docvia/plugin-vite@1.0.0(@docvia/source@0.3.1)':
+  '@docvia/plugin-vite@1.0.0(@docvia/source@0.4.0)':
     dependencies:
       '@docvia/core': 0.2.0
       '@docvia/ir': 0.4.0
       '@docvia/plugins': 0.3.1
       '@docvia/runtime': 0.5.0
       '@docvia/schema': 0.4.0
-      '@docvia/source': 0.3.1
+      '@docvia/source': 0.4.0
     transitivePeerDependencies:
       - supports-color
 
@@ -6883,10 +6866,6 @@ snapshots:
     dependencies:
       '@docvia/ir': 0.4.0
       jiti: 2.7.0
-
-  '@docvia/renderer-core@0.2.2':
-    dependencies:
-      '@docvia/ir': 0.3.0
 
   '@docvia/renderer-core@0.2.3':
     dependencies:
@@ -6910,13 +6889,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@docvia/schema@0.3.0':
-    dependencies:
-      '@docvia/ir': 0.3.0
-      '@standard-schema/spec': 1.1.0
-      yaml: 2.9.0
-      zod: 4.4.3
-
   '@docvia/schema@0.4.0':
     dependencies:
       '@docvia/ir': 0.4.0
@@ -6924,12 +6896,12 @@ snapshots:
       yaml: 2.9.0
       zod: 4.4.3
 
-  '@docvia/source@0.3.1':
+  '@docvia/source@0.4.0':
     dependencies:
       '@docvia/core': 0.2.0
-      '@docvia/ir': 0.3.0
-      '@docvia/renderer-core': 0.2.2
-      '@docvia/schema': 0.3.0
+      '@docvia/ir': 0.4.0
+      '@docvia/renderer-core': 0.2.3
+      '@docvia/schema': 0.4.0
     transitivePeerDependencies:
       - supports-color
 
