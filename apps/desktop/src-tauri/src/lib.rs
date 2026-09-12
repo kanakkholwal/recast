@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+mod agent;
+mod asset_scheme;
 mod audio;
 pub mod audio_decode;
 mod cache;
@@ -227,6 +229,9 @@ pub fn run() {
     );
 
     builder
+        .register_uri_scheme_protocol(asset_scheme::SCHEME, |_ctx, request| {
+            asset_scheme::handle(&request)
+        })
         // No-op outside Linux and WebKitGTK; macOS and Windows expose MediaDevices once their privacy gates are met.
         .on_page_load(|_webview, _payload| {
             #[cfg(target_os = "linux")]
@@ -247,6 +252,8 @@ pub fn run() {
             // The plugin was built at Trace: off leaves release at Warn, on captures backend and forwarded webview diagnostics.
             commands::system::apply_log_level(config.diagnostic_logging);
 
+            commands::system::seed_asset_scope(handle, &config);
+
             // Seed the self-host override so the no-arg `cloud_api_url()` reflects the saved choice from the first request.
             commands::auth::init_cloud_api_override(config.cloud_api_url.clone());
 
@@ -254,6 +261,9 @@ pub fn run() {
             let cold_open_file: Vec<String> = std::env::args().collect();
             let pending_open_file = parse_open_arg(&cold_open_file);
             let launched_for_new_recording = cold_open_file.iter().any(|a| a == "--new-recording");
+
+            control::doc::announce_changes(handle.clone());
+            control::doc::watch_files(handle.clone());
 
             // One source for the CLI and the panel; an absent file seeds in memory with initialized=false.
             let (profiles_state, profiles_initialized) =
@@ -375,18 +385,8 @@ pub fn run() {
                 let _ = ffmpeg::preferred_h264_encoder();
             });
 
-            // Startup: clean up stale temp files and orphaned session artifacts.
-            let state = app.state::<AppState>();
-            let output_dir = state.config.read().output_dir.clone();
-            if let Some(dir) = output_dir {
-                // The last disk walk in setup(), which runs before the event loop and delayed first paint on macOS.
-                tauri::async_runtime::spawn_blocking(move || {
-                    project::autosave::cleanup_stale_sessions(std::path::Path::new(&dir));
-                });
-            }
-
-            // Startup-only: nothing is open yet, so no live editor can lose the assets under it.
-            tauri::async_runtime::spawn_blocking(project::reader::sweep_cache);
+            // Startup-only: nothing is open yet, so no live editor loses an artifact under it.
+            tauri::async_runtime::spawn_blocking(cache::sweep);
 
             // `Drop` doesn't run on a kill, so scratch dirs pile up; startup plus single-instance means nothing is still writing.
             tauri::async_runtime::spawn_blocking(|| {
@@ -396,7 +396,17 @@ pub fn run() {
                 sweep_stale_temp(std::env::temp_dir(), Some("recast-export-"));
                 // Oversized `-filter_complex_script` files.
                 sweep_stale_temp(std::env::temp_dir(), Some("recast-filtergraph-"));
+                // Left by the recovery shadow, deleted in favour of the document WAL.
+                let _ = std::fs::remove_dir_all(std::env::temp_dir().join("recast-autosave"));
             });
+
+            // A crash mid-recording leaves session media in the user's own recordings folder, which nothing else sweeps.
+            let output_dir = app.state::<AppState>().config.read().output_dir.clone();
+            if let Some(dir) = output_dir {
+                tauri::async_runtime::spawn_blocking(move || {
+                    recording::sweep_orphaned_artifacts(std::path::Path::new(&dir));
+                });
+            }
 
             Ok(())
         })
@@ -433,6 +443,14 @@ pub fn run() {
             commands::release_editor_write,
             commands::force_release_editor_write,
             commands::migrate_project,
+            commands::save_project_edits,
+            commands::export_project_archive,
+            commands::import_project_archive,
+            commands::doc_show,
+            commands::grant_asset_path,
+            commands::doc_apply,
+            commands::doc_since,
+            commands::doc_flush,
             commands::generate_thumbnails,
             commands::cancel_export,
             commands::enqueue_export,
@@ -451,10 +469,6 @@ pub fn run() {
             commands::save_browser_export_video,
             commands::exclude_window_from_capture,
             commands::set_window_aspect_ratio,
-            commands::autosave_project,
-            commands::save_project_edits,
-            commands::clear_autosave,
-            commands::get_recoverable_sessions,
             commands::suggest_zoom_regions,
             silence::detect_silence,
             silence::extract_waveform,
@@ -474,6 +488,8 @@ pub fn run() {
             transcription::set_remote_asr_key,
             fonts::ensure_google_font,
             fonts::caption_font_file,
+            fonts::system_font_bytes,
+            fonts::engine_font_bytes,
             commands::ensure_assets_installed,
             commands::get_cached_asset_path,
             commands::hydrate_cached_assets,
@@ -482,6 +498,7 @@ pub fn run() {
             commands::set_extension_enabled,
             commands::uninstall_extension,
             commands::fetch_extension_registry,
+            commands::fetch_extension_asset,
             commands::diagnose_ffmpeg,
             commands::probe_video_encoders,
             commands::capture_capabilities,
@@ -508,6 +525,8 @@ pub fn run() {
             commands::set_cli_auto_install,
             commands::get_native_encoder,
             commands::set_native_encoder,
+            commands::get_agent_live_apply,
+            commands::set_agent_live_apply,
             commands::native_encoder_available,
             commands::get_hide_panel_from_capture,
             commands::set_hide_panel_from_capture,
@@ -556,6 +575,7 @@ pub fn run() {
 
             // Only on `Exit`: tray quit calls `process::exit` and skips `Drop for RecordingManager`, so mic and camera children would outlive the app.
             if matches!(event, tauri::RunEvent::Exit) {
+                crate::project::documents::documents().flush_all();
                 if let Some(state) = app_handle.try_state::<AppState>() {
                     state.recording_manager.abort_for_shutdown();
                 }

@@ -40,6 +40,7 @@ const CLI_VERBS: &[&str] = &[
     "export",
     "branch",
     "mcp",
+    "skills",
 ];
 
 /// True when argv[1] is a CLI verb or a help request. `main` uses this to pick
@@ -80,7 +81,7 @@ enum Format {
 #[derive(Parser)]
 #[command(
     name = "recast",
-    about = "Recast recorder automation CLI",
+    about = "Drive Recast without the GUI: record, read a project, propose edits, export",
     disable_help_subcommand = true
 )]
 struct Cli {
@@ -189,8 +190,9 @@ enum Command {
     Install,
     /// Remove `recast` from your PATH.
     Uninstall,
-    /// Read a project's editor state (`edits.json`) and derived timeline.
-    /// Phase A — read-only; no mutations, no lock acquisition.
+    /// Read and reshape a project: what it holds, what it looks like, and
+    /// the v3 document itself. The read verbs take no lock; `ops`, `patch`,
+    /// `migrate`, `pack` and `unpack` write.
     Project {
         #[command(subcommand)]
         action: ProjectAction,
@@ -208,15 +210,32 @@ enum Command {
         action: ExportAction,
     },
     /// Propose edits without touching the project. Ops are journalled against
-    /// the state they forked from; a human reviews the diff and applies.
+    /// the hash they forked from; a human reviews the diff and applies. A v3
+    /// project directory journals document ops in its own `branches/`.
     Branch {
         #[command(subcommand)]
         action: BranchAction,
     },
     /// Serve MCP on stdin/stdout so an MCP client can drive Recast. Launched by
-    /// the client, not by hand. Exposes read verbs plus branch proposals only:
-    /// applying a branch stays a human action.
+    /// the client, not by hand. Exposes the read verbs plus branch proposals;
+    /// applying a branch stays a human action, and writing to the open project
+    /// needs the "let agents edit the open project live" setting.
     Mcp,
+    /// Install the editing skill an agent client reads, and print how to connect it.
+    Skills {
+        #[command(subcommand)]
+        action: SkillsAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillsAction {
+    /// Write `recast-editing/SKILL.md` under the skills directory (default: `~/.claude/skills`).
+    Install {
+        /// Skills directory to write into.
+        #[arg(long, value_name = "DIR")]
+        dir: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -242,7 +261,9 @@ enum BranchAction {
         /// Retry-safe key. Re-sending one already on the branch is a no-op.
         #[arg(long, value_name = "KEY")]
         idem_key: String,
-        /// JSON array of ops, e.g. `[{"op":"cutAdd","start":1,"end":2}]`.
+        /// JSON array of ops. A bundle takes render-state ops such as
+        /// `[{"op":"cutAdd","start":1,"end":2}]`; a v3 project directory takes
+        /// document ops such as `[{"op":"set","id":"z1","attr":"scale","value":"2"}]`.
         #[arg(long, value_name = "JSON")]
         ops: Option<String>,
         /// Read the ops array from stdin instead of `--ops`.
@@ -251,6 +272,58 @@ enum BranchAction {
         /// Reject unless the branch is at this sequence number.
         #[arg(long, value_name = "N")]
         expect_seq: Option<u64>,
+        /// Reject unless the project is still at the hash the branch forked from.
+        #[arg(long, value_name = "HASH")]
+        expect_base: Option<String>,
+    },
+    /// Cut the detected silences, as one reviewable entry on the branch.
+    RemoveSilences {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        /// Retry-safe key. Re-sending one already on the branch is a no-op.
+        #[arg(long, value_name = "KEY")]
+        idem_key: String,
+        /// Ignore silences shorter than this, in seconds.
+        #[arg(long, value_name = "SECONDS")]
+        min_duration: Option<f64>,
+        /// Keep this much silence on each side of a cut, in seconds.
+        #[arg(long, value_name = "SECONDS")]
+        pad: Option<f64>,
+        /// How sure the detector must be, 0 to 1.
+        #[arg(long, value_name = "0..1")]
+        min_confidence: Option<f64>,
+        #[arg(long, value_name = "HASH")]
+        expect_base: Option<String>,
+    },
+    /// Add one zoom by intent (when, where, how close) rather than by region fields.
+    AddZoom {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        branch: String,
+        /// Retry-safe key. Re-sending one already on the branch is a no-op.
+        #[arg(long, value_name = "KEY")]
+        idem_key: String,
+        /// Where the zoom sits, in output seconds.
+        #[arg(long, value_name = "SECONDS")]
+        at: f64,
+        /// How long it holds, in output seconds.
+        #[arg(long, value_name = "SECONDS")]
+        duration: Option<f64>,
+        #[arg(long, value_name = "UV")]
+        center_x: Option<f64>,
+        #[arg(long, value_name = "UV")]
+        center_y: Option<f64>,
+        #[arg(long, value_name = "FACTOR")]
+        scale: Option<f64>,
+        /// Ease in and out over this many seconds.
+        #[arg(long, value_name = "SECONDS")]
+        ramp: Option<f64>,
+        /// Id for the new region; defaults to one derived from `--idem-key`.
+        #[arg(long, value_name = "ID")]
+        id: Option<String>,
+        #[arg(long, value_name = "HASH")]
+        expect_base: Option<String>,
     },
     /// Field-level changes the branch would make.
     Diff {
@@ -294,12 +367,13 @@ enum ProjectAction {
     /// List the recordings in the library, newest first. The only verb that
     /// takes no path, so it is where an agent with no project starts.
     List,
-    /// Open a `.recast` (or bare video) and print the full editor document.
+    /// Open a project and print the full editor document: a v3 directory, a
+    /// `.recast` bundle, or a bare video.
     Open {
-        /// Path to the `.recast` archive or source video.
+        /// Path to the project directory, `.recast` archive, or source video.
         path: String,
     },
-    /// Print the project's current `edits.json` (the same `RenderState` the editor ships).
+    /// Print the project's render state, the same one the editor ships.
     Show { path: String },
     /// Derive the project's kept-segment timeline (trim, cuts, output duration).
     Timeline { path: String },
@@ -307,6 +381,73 @@ enum ProjectAction {
     ZoomRegions { path: String },
     /// List the project's annotations.
     Annotations { path: String },
+    /// The project at a glance: state hash, durations, segments on both clocks, lanes, media.
+    Head { path: String },
+    /// Findings a render alone would not show: zooms inside cuts, captions
+    /// without words, annotations off frame or under the camera, validator errors.
+    Check { path: String },
+    /// Transcribed words on the output clock, optionally windowed.
+    Transcript {
+        path: String,
+        /// Window start, output seconds.
+        #[arg(long, value_name = "SECONDS")]
+        from: Option<f64>,
+        /// Window end, output seconds.
+        #[arg(long, value_name = "SECONDS")]
+        to: Option<f64>,
+    },
+    /// JPEG frames at evenly spaced output times, written under the temp dir; prints their paths.
+    Frames {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        from: Option<f64>,
+        #[arg(long, value_name = "SECONDS")]
+        to: Option<f64>,
+        /// How many frames to sample (max 24).
+        #[arg(long, default_value_t = 12)]
+        count: u32,
+    },
+    /// Detected silences on the output clock, optionally windowed.
+    Silences {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        from: Option<f64>,
+        #[arg(long, value_name = "SECONDS")]
+        to: Option<f64>,
+    },
+    /// Migrate a v1 or v2 `.recast` bundle into a v3 project directory. Runs headless; the bundle is kept as `.bak`.
+    Migrate {
+        path: String,
+        /// Directory to create (default: the bundle's own path, moving the bundle aside).
+        #[arg(long, value_name = "DIR")]
+        dest: Option<String>,
+        /// Delete the bundle instead of keeping it as `.bak`.
+        #[arg(long)]
+        no_backup: bool,
+    },
+    /// Zip a v3 project directory into one file for sharing. Media is stored, `.cache` is left out.
+    Pack { dir: String, file: String },
+    /// Extract a packaged v3 project into a new directory.
+    Unpack { file: String, dir: String },
+    /// Write the document's XSD, so an editor completes and validates `project.rcx`.
+    Schema {
+        /// File to write; prints to stdout when absent.
+        #[arg(long, value_name = "FILE")]
+        out: Option<String>,
+    },
+    /// Parse and validate a v3 project's document offline; prints the hash and every finding.
+    Doc { dir: String },
+    /// The live document from the running app (`doc.show`): canonical text, hash, seq.
+    Rcx { path: String },
+    /// Apply a JSON array of ops to the live document (`doc.apply`), refusing if it moved past `--expect-seq`.
+    Ops {
+        path: String,
+        /// File holding the ops array; `-` reads stdin.
+        #[arg(long, value_name = "FILE")]
+        file: String,
+        #[arg(long, value_name = "SEQ")]
+        expect_seq: Option<u64>,
+    },
     /// Acquire the project write-lock. Subsequent mutate/exports by either
     /// side block until release. Idempotent for the same caller.
     Lock {
@@ -318,7 +459,7 @@ enum ProjectAction {
         #[arg(long, value_name = "ID")]
         writer_id: String,
     },
-    /// Release the write-lock. By default only the holder can release; pass `--force` to evict a stale or wrong-owner lock (use with care — it erases the GUI's silent write window).
+    /// Release the write-lock. By default only the holder can release; pass `--force` to evict a stale or wrong-owner lock. Forcing erases the GUI's silent write window, so use it only on a lock you know is stale.
     Unlock {
         /// Release even if the lock is held by another id.
         #[arg(long)]
@@ -327,8 +468,8 @@ enum ProjectAction {
         #[arg(long, value_name = "ID")]
         writer_id: String,
     },
-    /// Replace the project's `edits.json` with a full RenderState JSON
-    /// from a file or stdin. Validates then writes via `save_project_edits`.
+    /// Replace the project's render state wholesale from a file or stdin.
+    /// Validates, then writes under the project write-lock.
     Patch {
         path: String,
         #[arg(long, value_name = "PATH")]
@@ -377,8 +518,8 @@ enum EditorAction {
         #[command(subcommand)]
         action: ZoomAction,
     },
-    /// Split markers — original-time seconds that divide the kept clip
-    /// into addressable segments.
+    /// Split markers: original-time seconds that divide the kept clip into
+    /// addressable segments.
     SplitPoint {
         #[command(subcommand)]
         action: SplitPointAction,
@@ -388,13 +529,13 @@ enum EditorAction {
         #[command(subcommand)]
         action: SpeedAction,
     },
-    /// Per-segment scene animations — entrance/exit transforms on the
+    /// Per-segment scene animations: entrance and exit transforms on the
     /// video layer, anchored to a segment's original start time.
     Animations {
         #[command(subcommand)]
         action: AnimationsAction,
     },
-    /// Annotations on the timeline — rect/ellipse/arrow/image/blur/text.
+    /// Annotations on the timeline: rect, ellipse, arrow, image, blur, text.
     Annotations {
         #[command(subcommand)]
         action: AnnotationsAction,
@@ -789,15 +930,15 @@ struct ShotArgs {
     base64: bool,
 }
 
-/// CLI args for the `transcribe` verb. Mirrors the flag shape the smoke test script (`scripts/release/smoke-test-transcription.ps1`) expects — keep both in lockstep.
+/// CLI args for the `transcribe` verb. Mirrors the flag shape the smoke test script (`scripts/release/smoke-test-transcription.ps1`) expects, so keep both in lockstep.
 #[derive(clap::Args)]
 struct TranscribeArgs {
     /// Audio file to transcribe (any format FFmpeg can read).
     #[arg(long, value_name = "PATH")]
     input: PathBuf,
-    /// Path to a downloaded `.gguf` model file. A single GGUF — the format
-    /// the on-device engine loads directly. The smoke test uses
-    /// `whisper-base-Q5_K_M.gguf` from `models-cache/smoke-test/`.
+    /// Path to a downloaded `.gguf` model file, the format the on-device
+    /// engine loads directly. The smoke test uses `whisper-base-Q5_K_M.gguf`
+    /// from `models-cache/smoke-test/`.
     #[arg(long, value_name = "PATH")]
     model: PathBuf,
     /// ISO source-language hint (e.g. `en`). Omit to let the model autodetect.
@@ -1019,6 +1160,28 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
         Command::Export { action } => export_dispatch(cli, action),
         Command::Branch { action } => branch_dispatch(cli, action),
         Command::Mcp => crate::mcp::serve(!cli.no_launch, cli.timeout_ms),
+        Command::Skills {
+            action: SkillsAction::Install { dir },
+        } => {
+            use crate::agent::instructions;
+            let dir = match dir {
+                Some(dir) => std::path::PathBuf::from(dir),
+                None => {
+                    instructions::default_skills_dir().ok_or("no home directory; pass --dir")?
+                }
+            };
+            let file = instructions::install_skill(&dir)?;
+            emit(
+                &json!({
+                    "installed": file,
+                    "connect": {
+                        "claudeCode": "claude mcp add recast -- recast mcp",
+                        "mcpJson": { "mcpServers": { "recast": { "command": "recast", "args": ["mcp"] } } },
+                    },
+                }),
+                cli.format,
+            )
+        }
     }
 }
 
@@ -1032,11 +1195,146 @@ fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
                 crate::control::send("project.list", json!({}), !cli.no_launch, cli.timeout_ms)?;
             emit(&value, cli.format)
         }
+        ProjectAction::Migrate {
+            path,
+            dest,
+            no_backup,
+        } => {
+            let abs =
+                |p: &str| crate::commands::screenshot::absolutize(std::path::PathBuf::from(p));
+            let src = abs(path);
+            let dest = dest.as_deref().map_or_else(|| src.clone(), abs);
+            let opts = recast_project::migrate::Options {
+                keep_backup: !no_backup,
+            };
+            let report =
+                recast_project::migrate::migrate(&src, &dest, opts).map_err(|e| e.to_string())?;
+            emit(
+                &json!({
+                    "fromVersion": report.from_version,
+                    "dest": report.dest,
+                    "backup": report.backup,
+                    "media": report.media,
+                    "tracks": report.tracks,
+                    "unknownKeys": report.unknown_keys,
+                    "warnings": report.warnings,
+                }),
+                cli.format,
+            )
+        }
+        ProjectAction::Pack { dir, file } => {
+            let abs =
+                |p: &str| crate::commands::screenshot::absolutize(std::path::PathBuf::from(p));
+            let file = abs(file);
+            recast_project::package::pack(&abs(dir), &file).map_err(|e| e.to_string())?;
+            emit(&json!({ "packed": file }), cli.format)
+        }
+        ProjectAction::Unpack { file, dir } => {
+            let abs =
+                |p: &str| crate::commands::screenshot::absolutize(std::path::PathBuf::from(p));
+            let dir = abs(dir);
+            recast_project::package::unpack(&abs(file), &dir).map_err(|e| e.to_string())?;
+            emit(&json!({ "unpacked": dir }), cli.format)
+        }
+        ProjectAction::Schema { out } => {
+            let xsd = recast_project::xsd::xsd();
+            let Some(out) = out else {
+                println!("{xsd}");
+                return Ok(());
+            };
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(out));
+            std::fs::write(&path, xsd).map_err(|e| e.to_string())?;
+            emit(&json!({ "schema": path }), cli.format)
+        }
+        ProjectAction::Doc { dir } => {
+            let dir = crate::commands::screenshot::absolutize(std::path::PathBuf::from(dir));
+            let store = recast_project::store::Store::open(&dir).map_err(|e| e.to_string())?;
+            let report = store.check();
+            emit(
+                &json!({
+                    "hash": store.hash().to_string(),
+                    "seq": store.seq(),
+                    "pending": store.pending(),
+                    "ok": report.is_ok(),
+                    "issues": report.issues,
+                }),
+                cli.format,
+            )
+        }
+        ProjectAction::Rcx { path } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            send_and_emit(cli, "doc.show", json!({ "path": path }))
+        }
+        ProjectAction::Ops {
+            path,
+            file,
+            expect_seq,
+        } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let text = if file == "-" {
+                let mut s = String::new();
+                std::io::Read::read_to_string(&mut std::io::stdin(), &mut s)
+                    .map_err(|e| format!("reading ops from stdin: {e}"))?;
+                s
+            } else {
+                std::fs::read_to_string(file.as_str())
+                    .map_err(|e| format!("reading {file}: {e}"))?
+            };
+            let ops: Value =
+                serde_json::from_str(&text).map_err(|e| format!("{file} is not JSON: {e}"))?;
+            let mut params = json!({ "path": path, "ops": ops });
+            if let Some(seq) = expect_seq {
+                params["expectSeq"] = json!(seq);
+            }
+            send_and_emit(cli, "doc.apply", params)
+        }
+        ProjectAction::Frames {
+            path,
+            from,
+            to,
+            count,
+        } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let mut params = json!({ "path": path, "count": count });
+            if let Some(from) = from {
+                params["from"] = json!(from);
+            }
+            if let Some(to) = to {
+                params["to"] = json!(to);
+            }
+            send_and_emit(cli, "agent.frames", params)
+        }
+        ProjectAction::Transcript { path, from, to }
+        | ProjectAction::Silences { path, from, to } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let method = match action {
+                ProjectAction::Transcript { .. } => "agent.transcript",
+                _ => "agent.silences",
+            };
+            let mut params = json!({ "path": path });
+            if let Some(from) = from {
+                params["from"] = json!(from);
+            }
+            if let Some(to) = to {
+                params["to"] = json!(to);
+            }
+            send_and_emit(cli, method, params)
+        }
         ProjectAction::Open { path }
         | ProjectAction::Show { path }
         | ProjectAction::Timeline { path }
         | ProjectAction::ZoomRegions { path }
-        | ProjectAction::Annotations { path } => {
+        | ProjectAction::Annotations { path }
+        | ProjectAction::Head { path }
+        | ProjectAction::Check { path } => {
             let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
                 .to_string_lossy()
                 .into_owned();
@@ -1046,6 +1344,8 @@ fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
                 ProjectAction::Timeline { .. } => "editor.timeline",
                 ProjectAction::ZoomRegions { .. } => "editor.zoom-regions",
                 ProjectAction::Annotations { .. } => "editor.annotations",
+                ProjectAction::Head { .. } => "editor.head",
+                ProjectAction::Check { .. } => "agent.check",
                 _ => unreachable!(),
             };
             let value = crate::control::send(
@@ -1507,6 +1807,7 @@ fn branch_dispatch(cli: &Cli, action: &BranchAction) -> Result<(), String> {
             ops,
             from_stdin,
             expect_seq,
+            expect_base,
         } => {
             let ops = read_ops_json(ops.as_deref(), *from_stdin)?;
             let mut params = json!({
@@ -1518,7 +1819,58 @@ fn branch_dispatch(cli: &Cli, action: &BranchAction) -> Result<(), String> {
             if let Some(seq) = expect_seq {
                 params["expectSeq"] = json!(seq);
             }
+            with_expect_base(&mut params, expect_base.as_deref());
             send_and_emit(cli, "branch.append", params)
+        }
+        BranchAction::RemoveSilences {
+            path,
+            branch,
+            idem_key,
+            min_duration,
+            pad,
+            min_confidence,
+            expect_base,
+        } => {
+            let mut params = json!({
+                "path": path_for(path),
+                "branch": branch,
+                "idemKey": idem_key,
+            });
+            put_f64(&mut params, "minDuration", *min_duration);
+            put_f64(&mut params, "pad", *pad);
+            put_f64(&mut params, "minConfidence", *min_confidence);
+            with_expect_base(&mut params, expect_base.as_deref());
+            send_and_emit(cli, "agent.remove-silences", params)
+        }
+        BranchAction::AddZoom {
+            path,
+            branch,
+            idem_key,
+            at,
+            duration,
+            center_x,
+            center_y,
+            scale,
+            ramp,
+            id,
+            expect_base,
+        } => {
+            let mut params = json!({
+                "path": path_for(path),
+                "branch": branch,
+                "idemKey": idem_key,
+                "at": at,
+            });
+            put_f64(&mut params, "duration", *duration);
+            put_f64(&mut params, "centerX", *center_x);
+            put_f64(&mut params, "centerY", *center_y);
+            put_f64(&mut params, "scale", *scale);
+            put_f64(&mut params, "ramp", *ramp);
+            if let Some(id) = id {
+                params["id"] = json!(id);
+            }
+            with_expect_base(&mut params, expect_base.as_deref());
+            send_and_emit(cli, "agent.add-zoom", params)
         }
         BranchAction::Diff { path, branch } => send_and_emit(
             cli,
@@ -1553,6 +1905,19 @@ fn branch_dispatch(cli: &Cli, action: &BranchAction) -> Result<(), String> {
 }
 
 /// Load the ops array for `branch append` from `--ops` or stdin.
+/// Pins the fork point so a project edited since the read is refused rather than rebased silently.
+fn with_expect_base(params: &mut Value, expect_base: Option<&str>) {
+    if let Some(hash) = expect_base {
+        params["expectBase"] = json!(hash);
+    }
+}
+
+fn put_f64(params: &mut Value, key: &str, value: Option<f64>) {
+    if let Some(value) = value {
+        params[key] = json!(value);
+    }
+}
+
 fn read_ops_json(ops: Option<&str>, from_stdin: bool) -> Result<Value, String> {
     let text = match (ops, from_stdin) {
         (Some(_), true) => return Err("--ops and --from-stdin are mutually exclusive".into()),
@@ -2199,6 +2564,72 @@ mod tests {
                 panic!("expected branch append");
             };
             assert_eq!(expect_seq, Some(3));
+        }
+
+        #[test]
+        fn the_intent_verbs_carry_the_fork_point_and_their_tuning() {
+            let cli = parse(&[
+                "recast",
+                "branch",
+                "add-zoom",
+                "Demo.recast",
+                "--branch",
+                "a1",
+                "--idem-key",
+                "k1",
+                "--at",
+                "12.5",
+                "--scale",
+                "2.4",
+                "--expect-base",
+                "abc123",
+            ]);
+
+            let Command::Branch {
+                action:
+                    BranchAction::AddZoom {
+                        at,
+                        scale,
+                        duration,
+                        expect_base,
+                        ..
+                    },
+            } = cli.command
+            else {
+                panic!("expected branch add-zoom");
+            };
+            assert_eq!((at, scale, duration), (12.5, Some(2.4), None));
+            assert_eq!(expect_base.as_deref(), Some("abc123"));
+        }
+
+        #[test]
+        fn remove_silences_leaves_every_unset_knob_to_the_server_default() {
+            let cli = parse(&[
+                "recast",
+                "branch",
+                "remove-silences",
+                "Demo.recast",
+                "--branch",
+                "a1",
+                "--idem-key",
+                "k1",
+                "--pad",
+                "0.2",
+            ]);
+
+            let Command::Branch {
+                action:
+                    BranchAction::RemoveSilences {
+                        pad,
+                        min_duration,
+                        min_confidence,
+                        ..
+                    },
+            } = cli.command
+            else {
+                panic!("expected branch remove-silences");
+            };
+            assert_eq!((pad, min_duration, min_confidence), (Some(0.2), None, None));
         }
 
         #[test]

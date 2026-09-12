@@ -208,7 +208,8 @@ way. Microphone and camera resolve by presence and push non-fatal warnings when
 they are missing.
 
 Finally the command computes duration from encoded frame count divided by fps
-rather than from the wall clock, writes the `.recast` bundle, releases the wake
+rather than from the wall clock, writes the project folder
+(`v3::write_project`), releases the wake
 lock, and surfaces any warnings.
 
 ## Invariants & gotchas

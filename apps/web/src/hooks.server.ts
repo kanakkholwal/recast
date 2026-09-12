@@ -4,6 +4,7 @@ import { building } from "$app/environment";
 import { getAuth } from "$lib/auth/server";
 import { getPublicEnv } from "$lib/env/public";
 import { getServerEnv } from "$lib/env/server";
+import { setRequestPlatform } from "$lib/server/platform";
 
 // Validate env at startup so the process refuses traffic with a half-configured .env; `building` skips the prerender pass.
 if (!building) {
@@ -12,6 +13,7 @@ if (!building) {
 }
 
 export const handle: Handle = ({ event, resolve }) => {
+	setRequestPlatform(event.platform);
 	// `auth: getAuth()` is an argument, so it evaluates before svelteKitHandler's own building guard, and on a box with no DATABASE_URL that threw a 500 on every prerendered page.
 	if (building) return resolve(event);
 	return svelteKitHandler({ event, resolve, auth: getAuth(), building });

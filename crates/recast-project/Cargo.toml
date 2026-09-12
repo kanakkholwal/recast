@@ -1,0 +1,30 @@
+[package]
+name = "recast-project"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "The v3 project format: a markup document with src references in a directory, its schema, parser, canonical writer, ops, migration and store."
+
+[features]
+default = ["native"]
+# Filesystem and zip: the directory layout, migration from v1/v2 bundles, packaging and the write-ahead store. Off for wasm32.
+native = ["dep:zip"]
+
+[dependencies]
+recast-captions = { path = "../recast-captions" }
+recast-color = { path = "../recast-color" }
+recast-scene = { path = "../recast-scene" }
+recast-time = { path = "../recast-time", default-features = false, features = ["serde"] }
+quick-xml = "0.37"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "2.0"
+zip = { version = "2.2.0", default-features = false, features = ["deflate"], optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

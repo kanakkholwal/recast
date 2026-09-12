@@ -267,6 +267,7 @@ impl FrameLoop {
                     },
                 );
             }
+            inputs.set_annotation_glyphs(source.annotation_glyphs(output_time));
             inputs.set_caption(source.caption_frame(output_time));
 
             let missing: Vec<_> = inputs

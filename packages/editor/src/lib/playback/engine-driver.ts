@@ -2,7 +2,9 @@ import {
 	type CursorPlacement,
 	type CursorSlot,
 	type EngineBackend,
+	isEmptyPatch,
 	PreviewEngine,
+	shallowPatch,
 } from "@recast/engine";
 import type { EditorRenderState } from "../editor/render-state";
 
@@ -33,7 +35,8 @@ export interface EngineDriverInfo {
  */
 export class PreviewEngineDriver {
 	readonly #engine: PreviewEngine;
-	#sceneSignature = "";
+	/** The state as last pushed, its compound fields by identity. */
+	#lastState: Record<string, unknown> | null = null;
 	#timeMapSignature = "\0";
 	#trackSignature = "";
 	#canvasSize = "";
@@ -44,6 +47,9 @@ export class PreviewEngineDriver {
 	#ringCapacity = 0;
 	#spriteKey = "";
 	#captionTrackSignature = "";
+	#editingAnnotation: string | null = null;
+	#textFonts = new Map<string, boolean>();
+	#drawsAnnotationText = false;
 	#captionFontKey = "";
 	#annotationImageKey = "";
 
@@ -78,19 +84,26 @@ export class PreviewEngineDriver {
 	}
 
 	/**
-	 * Pushes the scene only when it actually changed. The caller runs this from a
-	 * reactive effect that fires on any store write, and re-parsing an unchanged
-	 * scene rebuilds the evaluator and the time map for nothing.
+	 * Pushes what changed. The caller runs this from a reactive effect that fires
+	 * on any store write; the store memoises its compound fields, so the diff is a
+	 * few reference checks and only the changed fields are serialised. The first
+	 * push, or one the engine cannot patch, sends the whole state.
 	 */
 	syncScene(state: EditorRenderState): boolean {
-		const json = JSON.stringify(state);
-		if (json === this.#sceneSignature) return false;
-		this.#sceneSignature = json;
+		const next = state as unknown as Record<string, unknown>;
+		const patch = this.#lastState ? shallowPatch(this.#lastState, next) : null;
+		if (patch && isEmptyPatch(patch)) return false;
 		try {
-			this.#engine.setScene(json);
+			if (patch) {
+				this.#engine.patchScene(patch);
+			} else {
+				this.#engine.setScene(JSON.stringify(state));
+			}
+			this.#lastState = next;
 		} catch (err) {
 			// Thrown from a reactive effect this would strand the engine on its last scene and silently ignore every later edit.
 			console.error("preview engine refused the scene:", err);
+			this.#lastState = null;
 			return false;
 		}
 		// Layer ids are assigned during migration, so they can move when the scene changes shape.
@@ -161,6 +174,57 @@ export class PreviewEngineDriver {
 		} catch (err) {
 			console.warn("preview engine refused the caption track:", err);
 		}
+	}
+
+	/**
+	 * A face for one family, so the engine can shape text that names it. Deduped
+	 * by family and weight: the bytes are megabytes and the upload is not free.
+	 * Returns whether the engine can now draw that family.
+	 */
+	setTextFont(family: string, weight: number, data: Uint8Array): boolean {
+		const key = `${family}:${weight}`;
+		if (this.#textFonts.has(key)) return this.#textFonts.get(key) === true;
+		const ok = this.#engine.setTextFont(family, weight, data, 0);
+		this.#textFonts.set(key, ok);
+		if (!ok) console.warn("preview engine could not read the text font", key);
+		return ok;
+	}
+
+	/** Families the engine has a face for, so the host knows what it can stop drawing. */
+	hasTextFont(family: string, weight: number): boolean {
+		return this.#textFonts.get(`${family}:${weight}`) === true;
+	}
+
+	/** Every face the scene's words ask for. Read after `setScene`: it answers for the scene the engine holds. */
+	wantedFaces(): { stack: string; weight: number }[] {
+		return this.#engine.wantedFaces();
+	}
+
+	/** The face unnamed or unfound families draw with. */
+	fallbackFace(): { stack: string; weight: number } {
+		return this.#engine.fallbackFace();
+	}
+
+	/** Every image file the scene draws, composition slides included. */
+	wantedImages(): string[] {
+		return this.#engine.wantedImages();
+	}
+
+	/** Hands the words of text annotations to the engine, or takes them back. */
+	setDrawAnnotationText(on: boolean): void {
+		if (on === this.#drawsAnnotationText) return;
+		this.#drawsAnnotationText = on;
+		this.#engine.setDrawAnnotationText(on);
+	}
+
+	/**
+	 * Names the text annotation the editor is drawing itself, because the caret
+	 * is in it. Deduped, since it is set from an effect that runs per frame.
+	 */
+	setEditingAnnotation(id: string | null): void {
+		if (id === this.#editingAnnotation) return;
+		this.#editingAnnotation = id;
+		this.#engine.setEditingAnnotation(id);
 	}
 
 	/**

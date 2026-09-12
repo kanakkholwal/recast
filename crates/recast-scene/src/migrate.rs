@@ -24,6 +24,56 @@ impl From<&Scene> for RenderState {
     }
 }
 
+/// Puts each binding on the layer its `LayerRef` names; a ref to an annotation the state does not have is dropped.
+pub fn attach_bindings(layers: &mut [Layer], bindings: &[crate::bind::LayerBinding]) {
+    for lb in bindings {
+        if let Some(layer) = layer_for(layers, &lb.layer) {
+            layer.bindings.push(lb.binding.clone());
+        }
+    }
+}
+
+/// Puts each material on the layer its `LayerRef` names.
+pub fn attach_materials(layers: &mut [Layer], materials: &[crate::material::LayerMaterial]) {
+    for lm in materials {
+        if let Some(layer) = layer_for(layers, &lm.layer) {
+            layer.material = lm.material;
+        }
+    }
+}
+
+/// Puts each transform on the layer its `LayerRef` names.
+pub fn attach_transforms(layers: &mut [Layer], transforms: &[crate::bind::LayerTransform]) {
+    for lt in transforms {
+        if let Some(layer) = layer_for(layers, &lt.layer) {
+            layer.transform = lt.transform;
+        }
+    }
+}
+
+/// One layer per instance whatever surface it draws on, so document order survives the round trip and the renderer has one thing to walk.
+/// Where it lands is the manifest's business, read at evaluation.
+pub fn attach_graphics(layers: &mut Vec<Layer>, graphics: &[crate::component::GraphicSpec]) {
+    let first = layers.len() as u32 + FIRST_ANNOTATION_LAYER;
+    for (offset, spec) in graphics.iter().enumerate() {
+        layers.push(Layer::new(
+            first + offset as u32,
+            LayerSource::Graphic(Box::new(spec.clone())),
+        ));
+    }
+}
+
+fn layer_for<'a>(layers: &'a mut [Layer], target: &crate::bind::LayerRef) -> Option<&'a mut Layer> {
+    use crate::bind::LayerRef;
+    match target {
+        LayerRef::Screen => layers.get_mut(SCREEN_LAYER as usize),
+        LayerRef::Camera => layers.get_mut(CAMERA_LAYER as usize),
+        LayerRef::Annotation { id } => layers
+            .iter_mut()
+            .find(|l| matches!(&l.source, LayerSource::Annotation(a) if a.id == *id)),
+    }
+}
+
 pub fn to_scene(state: &RenderState) -> Scene {
     let mut layers = vec![
         Layer::new(BACKGROUND_LAYER, background_source(state))
@@ -39,6 +89,8 @@ pub fn to_scene(state: &RenderState) -> Scene {
         ),
     ];
     layers[CAMERA_LAYER as usize].hidden = !state.camera_overlay.enabled;
+    layers[CAMERA_LAYER as usize].placement =
+        crate::bind::PlacementRule::from_settings(&state.camera_overlay);
     layers[CURSOR_LAYER as usize].hidden = !state.cursor_enabled;
 
     for (index, annotation) in state.annotations.iter().enumerate() {
@@ -50,6 +102,10 @@ pub fn to_scene(state: &RenderState) -> Scene {
         layer.opacity = annotation.opacity;
         layers.push(layer);
     }
+    attach_graphics(&mut layers, &state.graphics);
+    attach_bindings(&mut layers, &state.bindings);
+    attach_transforms(&mut layers, &state.transforms);
+    attach_materials(&mut layers, &state.materials);
 
     Scene {
         schema: SCHEMA_VERSION,
@@ -58,6 +114,8 @@ pub fn to_scene(state: &RenderState) -> Scene {
         captions: state.caption_style.clone(),
         // The words live in their own file, like the pointer path, and the editor attaches them after migrating.
         caption_track: None,
+        composition: state.composition.clone(),
+        vars: state.vars.clone(),
         flags: SceneFlags {
             focus: state.focus_enabled,
             annotations: state.annotations_enabled,
@@ -191,6 +249,11 @@ pub fn to_render_state(scene: &Scene) -> RenderState {
         segment_speeds: scene.timeline.segment_speeds.clone(),
         audio_settings: scene.audio.settings.clone(),
         music_clips: scene.audio.clips.clone(),
+        composition: scene.composition.clone(),
+        vars: scene.vars.clone(),
+        bindings: layer_bindings(scene),
+        transforms: layer_transforms(scene),
+        materials: layer_materials(scene),
         passthrough: scene.passthrough.clone(),
         ..RenderState::default()
     };
@@ -223,9 +286,70 @@ pub fn to_render_state(scene: &Scene) -> RenderState {
             LayerSource::Annotation(annotation) => {
                 state.annotations.push((**annotation).clone());
             }
+            LayerSource::Graphic(graphic) => state.graphics.push((**graphic).clone()),
         }
     }
     state
+}
+
+/// The per-layer blocks, back off the layers they were attached to. Without
+/// these a round trip through the scene silently drops what the document
+/// declared, which the fully-populated oracle is there to catch.
+fn layer_ref(scene: &Scene, index: usize, layer: &Layer) -> Option<crate::bind::LayerRef> {
+    use crate::bind::LayerRef;
+    let _ = scene;
+    match (index as u32, &layer.source) {
+        (SCREEN_LAYER, _) => Some(LayerRef::Screen),
+        (CAMERA_LAYER, _) => Some(LayerRef::Camera),
+        (_, LayerSource::Annotation(a)) => Some(LayerRef::Annotation { id: a.id.clone() }),
+        _ => None,
+    }
+}
+
+fn layer_bindings(scene: &Scene) -> Vec<crate::bind::LayerBinding> {
+    let mut out = Vec::new();
+    for (index, layer) in scene.layers.iter().enumerate() {
+        let Some(target) = layer_ref(scene, index, layer) else {
+            continue;
+        };
+        for binding in &layer.bindings {
+            out.push(crate::bind::LayerBinding {
+                layer: target.clone(),
+                binding: binding.clone(),
+            });
+        }
+    }
+    out
+}
+
+fn layer_transforms(scene: &Scene) -> Vec<crate::bind::LayerTransform> {
+    scene
+        .layers
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| !l.transform.is_identity())
+        .filter_map(|(index, layer)| {
+            Some(crate::bind::LayerTransform {
+                layer: layer_ref(scene, index, layer)?,
+                transform: layer.transform,
+            })
+        })
+        .collect()
+}
+
+fn layer_materials(scene: &Scene) -> Vec<crate::material::LayerMaterial> {
+    scene
+        .layers
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| !l.material.is_none())
+        .filter_map(|(index, layer)| {
+            Some(crate::material::LayerMaterial {
+                layer: layer_ref(scene, index, layer)?,
+                material: layer.material,
+            })
+        })
+        .collect()
 }
 
 /// A colour that did not survive parsing is stored as an `Asset` layer, so
@@ -554,7 +678,37 @@ mod tests {
             { "id": "m1", "source": { "kind": "local", "path": "C:/music/a.mp3" },
               "startOutputSec": 1.0, "durationSec": 8.0, "gain": 0.7 }
         ],
-        "cameraOverlay": { "enabled": true, "mirror": false, "shape": "circle", "cornerRadius": 0.3 }
+        "cameraOverlay": { "enabled": true, "mirror": false, "shape": "circle", "cornerRadius": 0.3 },
+        "graphics": [
+            { "id": "g1", "component": "sweep@1.0", "start": 1.0, "duration": 4.0,
+              "params": { "angle": "20" }, "fallbackSurface": "screen" },
+            { "id": "g2", "component": "spotlight@1.0", "start": 0.0, "duration": 2.0 }
+        ],
+        "vars": [
+            { "name": "accent", "type": "color", "value": "#22d3ee", "path": "Brand" }
+        ],
+        "materials": [
+            { "layer": "screen", "contact": 0.4, "rim": 0.25, "rimWidth": 0.06 }
+        ],
+        "transforms": [
+            { "layer": "screen", "ry": 24.0, "z": 0.2 }
+        ],
+        "bindings": [
+            { "layer": "screen", "prop": "opacity", "signal": "time", "map": "wave",
+              "from": 0.2, "to": 1.0, "period": 2.0 }
+        ],
+        "composition": {
+            "transition": "dissolve",
+            "transitionDur": 0.5,
+            "items": [
+                { "id": "i1", "at": 0.0, "dur": 4.0, "opacity": 0.9,
+                  "area": { "x": 0.1, "y": 0.1, "w": 0.8, "h": 0.8 },
+                  "content": { "kind": "image", "src": "media/a.png", "fit": "contain", "radius": 0.02 } },
+                { "id": "t1", "at": 4.0, "dur": 3.0,
+                  "content": { "kind": "text", "content": "Hello", "size": 0.08,
+                               "color": "#ffffff", "align": "start", "weight": 700.0, "lineHeight": 1.2 } }
+            ]
+        }
     }"##;
 
     /// The round trip is only an oracle if a fixture actually sets the field.
@@ -591,7 +745,59 @@ mod tests {
 
     /// Keys `fully_populated()` must emit. Bumped deliberately, never to make a
     /// failing test pass.
-    const RENDER_STATE_KEYS: usize = 45;
+    const RENDER_STATE_KEYS: usize = 51;
+
+    /// Both spellings become layers, in the order the document listed them, so
+    /// the z-order an author sees is the order they wrote.
+    #[test]
+    fn every_component_instance_becomes_one_layer_in_document_order() {
+        let state = state_json(serde_json::json!({
+            "graphics": [
+                { "id": "over", "component": "spotlight@1.0" },
+                { "id": "screen", "component": "sweep@1.0", "fallbackSurface": "screen" }
+            ]
+        }));
+
+        let scene = to_scene(&state);
+
+        let names: Vec<&str> = scene
+            .layers
+            .iter()
+            .filter_map(|l| match &l.source {
+                LayerSource::Graphic(g) => Some(g.id.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(names, ["over", "screen"]);
+        assert_eq!(
+            to_render_state(&scene).graphics.len(),
+            2,
+            "and both come back"
+        );
+    }
+
+    /// An instance the registry cannot serve is still an instance: dropping it
+    /// on load would silently delete an author's work.
+    #[test]
+    fn an_unresolvable_component_still_reaches_the_scene() {
+        let state = state_json(serde_json::json!({
+            "graphics": [{ "id": "g1", "component": "not-a-component@9.9" }]
+        }));
+
+        let scene = to_scene(&state);
+
+        let graphic = scene.layers.iter().find_map(|l| match &l.source {
+            LayerSource::Graphic(g) => Some(g),
+            _ => None,
+        });
+        let graphic = graphic.expect("the layer survives");
+        assert!(!graphic.resolution().is_ready());
+        assert_eq!(
+            graphic.resolution().recipe(),
+            crate::component::PLACEHOLDER,
+            "and draws the placeholder"
+        );
+    }
 
     #[test]
     fn layer_ids_are_unique_and_next_id_does_not_collide() {

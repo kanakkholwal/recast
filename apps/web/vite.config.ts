@@ -92,10 +92,7 @@ export default defineConfig(({ isSsrBuild }) => ({
 			"better-auth/svelte",
 			"bits-ui",
 			"clsx",
-			"mode-watcher",
-			"svelte-sonner",
 			"tailwind-merge",
-			"tailwind-variants",
 			// A transitive dep of @recast/analytics: pre-bundle it so the first capture doesn't trigger a reload cascade.
 			"posthog-js",
 		],

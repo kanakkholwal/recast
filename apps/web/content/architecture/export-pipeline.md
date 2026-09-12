@@ -1,14 +1,14 @@
 ---
 kind: architecture
 title: "Export pipeline"
-description: "Three render paths behind one queue: the browser engine, the same engine natively, and the FFmpeg compositor they fall back to."
+description: "Three render paths behind one queue: the browser engine, the same engine natively, and the FFmpeg compositor for what it can still draw."
 position: 6
 status: production
 domain: pipeline
 summary: "One engine composites, in the browser or natively. FFmpeg muxes, and composites only what the engine has not taken over."
 inputs:
   - "An EditorRenderState snapshot"
-  - "Source media from the .recast bundle"
+  - "Source media from the project folder"
   - "Export settings: format, resolution, fps"
 outputs:
   - "An .mp4 or .gif on disk"
@@ -19,7 +19,9 @@ entrypoints:
   - "apps/desktop/src-tauri/src/commands/export/"
 invariants:
   - "The FFmpeg compositor is the fallback, chosen for the user rather than by them; the two engine paths are opt-in flags."
-  - "A scene the FFmpeg graph cannot draw is REFUSED by name, never exported as something else."
+  - "A project the FFmpeg graph cannot draw goes to the native engine whatever the flags say, and is never exported as something else."
+  - "An engine that declines such a project fails by name; it never falls back to the graph."
+  - "The compositor says which fonts and images a scene needs, and one Rust resolver finds the fonts for preview and export alike."
   - "A video stream copy means the browser must render at source-composition resolution."
   - "Two serial queues cooperate: an app-scoped render queue, and a durable Rust queue that survives restart."
   - "A browser-path failure falls back to Rust without the user losing the job."
@@ -39,14 +41,18 @@ goes through `recast-codec-mf` and `recast-mux` rather than FFmpeg.
 
 The legacy Rust/FFmpeg `filter_complex` compositor still exists and runs as the
 **fallback**: chosen for the user rather than by them. It is selected when both
-engine flags are off, or when a path is blocked, incapable, or fails mid-render.
+engine flags are off, or when a path is blocked, incapable, or fails mid-render,
+and only for a project it can draw whole.
 
-That fallback can no longer draw everything the engine can, so features it
-lacks are **refused by name** instead of silently exported as something else.
-`unsupported_by_graph` (`commands/editor.rs`) names the camera layout or
-pointer dodging and tells the user which flag renders it: its camera placement
-is a sampled expression LUT already at `av_expr_parse`'s term budget, with no
-room for a second moving rect.
+That fallback can no longer draw everything the engine can.
+`unsupported_by_graph` (`commands/editor.rs`) names every such feature, not just
+the first: camera layouts, pointer dodging, graphics components, a lit material,
+a non-identity 3D transform, bindings and a composition. `route_for_graph_gaps`
+sends a project with any of them to the native engine, at enqueue and again in
+`run_export_job`, whatever the flags say; only `RECAST_ENGINE_EXPORT=0` refuses
+instead, listing them. The graph cannot grow into this: its camera placement is
+a sampled expression LUT already at `av_expr_parse`'s term budget, with no room
+for a second moving rect.
 
 Two independent serial queues cooperate:
 
@@ -60,7 +66,8 @@ Two independent serial queues cooperate:
 
 Engine selection (`chooseExportEngine`) is a pure resolver behind the
 `browserExportBeta` experimental flag. Both it and `engineExport` are off by
-default, so an untouched install still composites in FFmpeg.
+default, so an untouched install composites in FFmpeg unless the project needs
+the engine.
 
 ## Diagram
 
@@ -131,8 +138,10 @@ sequenceDiagram
 | `run_mux_job` / `mux_browser_gif` | `apps/desktop/src-tauri/src/commands/editor.rs` /  | `-c:v copy` + audio mux; 2-pass GIF palette on the browser video |
 | `export_queue` commands + worker | `apps/desktop/src-tauri/src/commands/export_queue.rs` | Durable SQLite queue, serial worker, `save_browser_export_video`, reconcile/sweep |
 | Rust composite fallback | `apps/desktop/src-tauri/src/commands/export/*.rs` | `run_export_job` full FFmpeg compositor (cuts/speed, captions, camera, blur, codec) |
-| Native engine export | `apps/desktop/src-tauri/src/export_engine.rs` | The wgpu compositor plus `recast-codec-mf`/`recast-mux`, behind `engineExport` |
-| Graph refusal | `unsupported_by_graph` in `apps/desktop/src-tauri/src/commands/editor.rs` | Names a camera layout or pointer dodge the FFmpeg graph cannot draw |
+| Native engine export | `apps/desktop/src-tauri/src/export_engine.rs` | The wgpu compositor plus `recast-codec-mf`/`recast-mux`, behind `engineExport` or for a project the graph cannot draw |
+| Graph routing | `unsupported_by_graph` / `route_for_graph_gaps` in `apps/desktop/src-tauri/src/commands/editor.rs` | Names every feature the FFmpeg graph cannot draw and sends such a project to the engine |
+| Host needs | `crates/recast-compositor/src/host_needs.rs` | `wanted_faces`, `wanted_images`, `fallback_face`: what a scene needs uploaded, read by the native export and, through wasm, the preview |
+| Font resolver | `resolve_engine_font` in `apps/desktop/src-tauri/src/fonts.rs` | Installed face first, else the Google family; the preview calls it through `engine_font_bytes` |
 
 ## Control / data flow
 
@@ -185,12 +194,16 @@ clears `hasRenderPhase` and calls `enqueueExport({ ...params, exportId })`
 1. `enqueue_export` (`export_queue.rs`) probes source metadata, auto-repairs
    the render state (clamps stale `trim_end`), runs `validate_render_state`,
    then atomically writes the payload file + inserts a `queued` row and notifies
-   `export_wake`.
+   `export_wake`. On the way in, `route_for_graph_gaps` switches a project the
+   graph cannot draw to the engine, and with the engine off
+   `undrawable_by_the_graph` refuses text the graph has no shaper for.
 2. The serial worker (`spawn_export_worker`, own thread + current-thread
    runtime) claims the oldest queued row (`claim_next_queued`) and, seeing no
-   `browser_video_path`, calls `run_export_job`, the full FFmpeg
-   `filter_complex` compositor under `commands/export/*.rs` (cuts/speed, burned
-   captions, camera burn-in, blur, codec selection).
+   `browser_video_path`, calls `run_export_job`. That routes again (a payload
+   may have been queued before the rule) and runs the native engine when
+   `engine_export` is set; otherwise the full FFmpeg `filter_complex`
+   compositor under `commands/export/*.rs` (cuts/speed, burned captions, camera
+   burn-in, blur, codec selection).
 3. Success writes the output path + `success`; failure keeps the payload for
    retry; a "cancel"-containing error records `cancelled`.
 
@@ -233,6 +246,15 @@ clears `hasRenderPhase` and calls `enqueueExport({ ...params, exportId })`
   (`exportActivity`). The worker-vs-main-thread layer also self-heals: a
   worker failure rebuilds a fresh job (bitmaps were transferred away) and retries
   main-thread (`browser-export.ts`).
+- **Anything new the engine draws goes into `unsupported_by_graph` in the same
+  change, with a test.** Nothing else ties the two lists together, and one
+  project would have lost seven components, a material and a 3D transform with
+  no error. A value that draws nothing (an unlit material, an identity
+  transform) is not counted.
+- **Text is shaped by the engine or rasterised by the DOM, never a mix.**
+  `engineCanShapeText` is all or none: the engine takes annotation text only when
+  the export will use it and every face resolved; otherwise the editor
+  rasterises every text annotation to an image before enqueue.
 - **Queue durability.** The heavy `ExportRequest` payload is a file under
   `export_queue/<id>.json`; the SQLite row holds only metadata + that path.
   Enqueue is atomic (`write_atomic`). A job survives closing its editor (the
@@ -255,8 +277,9 @@ clears `hasRenderPhase` and calls `enqueueExport({ ...params, exportId })`
 
 ## The native engine path
 
-A third route, behind the `engineExport` experimental flag: the SAME compositor
-run natively in Rust rather than in the preview window. `export_engine.rs`
+A third route, behind the `engineExport` experimental flag and taken on its own
+for a project the FFmpeg graph cannot draw: the SAME compositor run natively in
+Rust rather than in the preview window. `export_engine.rs`
 drives `Session` -> `FrameLoop` -> a codec backend.
 
 It exists because the browser route has a ceiling. Above 1080p60 the throughput
@@ -281,6 +304,25 @@ native engine for heavy ones.
 - **Every export logs what it did**: codec backend, pixel path, canvas, the
   source size a quality cap shrank from, audio and captions. Quote that line
   when an export looks wrong.
+- **The flag has to survive every hop.** The desktop `enqueueExport` wrapper
+  once rebuilt the request field by field and left `engineExport` out, so every
+  editor export ran on FFmpeg until 0.4.7. It spreads the payload now, and
+  `ipc.enqueue-export.test.ts` asserts every key `exportPayload` builds reaches
+  `invoke`.
+- **Fonts and images come from the scene.** `host_needs::wanted_faces` lists
+  the faces of visible text annotations, of component text sampled across each
+  component's life, and of composition text; `wanted_images` lists annotation
+  and composition images. The export resolves each face with
+  `resolve_engine_font` (installed first, else the Google family with
+  `X Variable` read as `X`, downloaded once) and supplies `fallback_face`, the
+  caption style, as the default.
+- **Blank text is an error, not a result.** After the faces are supplied,
+  `Session::unshapeable_faces` names any family still without one and the export
+  fails with `EngineExportError::MissingFont`. That is not `Unsupported`, so it
+  never falls back to the graph.
+- **A decline does not fall back when the graph cannot draw the project.** An
+  engine `Unsupported` or `Encode` error on such a project fails with both
+  reasons. `RECAST_ENGINE_EXPORT=1` forces the engine on and `0` forces it off.
 
 ### Where contributors can take it
 

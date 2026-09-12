@@ -261,7 +261,7 @@ function onCardClick(event: MouseEvent) {
         ? 'justify-center'
         : ''}"
       id={`zoom-region-${region.id}`}
-      aria-label={`Focus region from ${formatTimeByMode(outSec(region.start), timeMode, fps)} to ${formatTimeByMode(outSec(region.end), timeMode, fps)}, scale ${region.scale.toFixed(1)}x. Click to select; drag to move; drag the edges to resize.`}
+      aria-label={`Focus region from ${formatTimeByMode(store.displaySec(region.start), timeMode, fps)} to ${formatTimeByMode(store.displaySec(region.end), timeMode, fps)}, scale ${region.scale.toFixed(1)}x. Click to select; drag to move; drag the edges to resize.`}
     >
       {#if width < NAME_WIDTH_PX}
         <!-- Too narrow for a label. The fill already says which lane this is, so

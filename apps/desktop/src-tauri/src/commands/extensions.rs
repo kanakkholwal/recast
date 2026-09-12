@@ -397,6 +397,42 @@ pub async fn fetch_extension_registry(index_url: String) -> AppResult<serde_json
         .map_err(|e| AppError::msg(format!("registry parse: {e}")))
 }
 
+/// Previews may not exceed this; a pack's SVG is a few KB and a thumb well under a megabyte.
+const PREVIEW_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// One remote pack asset as bytes, for the details dialog. Release hosts serve SVG as `application/octet-stream`
+/// with `attachment`, which an `<img>` refuses, and the release CSP keeps the webview from fetching it itself.
+#[tauri::command]
+pub async fn fetch_extension_asset(url: String) -> AppResult<Vec<u8>> {
+    if !url_allowed(&url) {
+        return Err(AppError::from(
+            "asset URL must be https (localhost allowed for dev)",
+        ));
+    }
+    let client = http_client()?;
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| AppError::msg(format!("asset request: {e}")))?
+        .error_for_status()
+        .map_err(|e| AppError::msg(format!("asset http: {e}")))?;
+    if response
+        .content_length()
+        .is_some_and(|n| n > PREVIEW_MAX_BYTES as u64)
+    {
+        return Err(AppError::from("asset is too large to preview"));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|e| AppError::msg(format!("asset read: {e}")))?;
+    if bytes.len() > PREVIEW_MAX_BYTES {
+        return Err(AppError::from("asset is too large to preview"));
+    }
+    Ok(bytes.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

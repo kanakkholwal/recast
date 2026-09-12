@@ -51,6 +51,7 @@ struct ShadowUniform {
     rect: [f32; 4],
     shape: [f32; 4],
     tint: [f32; 4],
+    warp: [[f32; 4]; 3],
 }
 
 #[repr(C)]
@@ -60,6 +61,19 @@ struct ShapeUniform {
     params: [f32; 4],
     fill: [f32; 4],
     stroke: [f32; 4],
+    warp: [[f32; 4]; 3],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct ComponentUniform {
+    rect: [f32; 4],
+    canvas: [f32; 4],
+    p0: [f32; 4],
+    p1: [f32; 4],
+    tint: [f32; 4],
+    tint2: [f32; 4],
+    warp: [[f32; 4]; 3],
 }
 
 #[repr(C)]
@@ -68,6 +82,7 @@ struct RegionUniform {
     rect: [f32; 4],
     params: [f32; 4],
     tint: [f32; 4],
+    warp: [[f32; 4]; 3],
 }
 
 #[repr(C)]
@@ -79,6 +94,11 @@ struct CardUniform {
     affine_b: [f32; 4],
     flags: [f32; 4],
     focus: [f32; 4],
+    /// Projected corners 0 and 1 (xy each), then 2 and 3; `plane_w` is their depth. `flags.w` says whether they apply.
+    plane_a: [f32; 4],
+    plane_b: [f32; 4],
+    plane_w: [f32; 4],
+    material: [f32; 4],
 }
 
 /// Decoded source frames for one instant, addressed by layer.
@@ -96,6 +116,9 @@ pub struct FrameInputs<'a> {
     /// This frame's caption, already laid out in canvas pixels. Owned rather
     /// than borrowed because the layout is built per frame, not uploaded.
     caption: CaptionFrame,
+    /// The words annotations carry, laid out the same way but drawn with them,
+    /// so a text annotation stacks where its author put it rather than on top.
+    annotation_glyphs: Vec<crate::text::GlyphQuad>,
 }
 
 /// A pointer sprite and the point on it that sits on the cursor position.
@@ -164,6 +187,11 @@ impl<'a> FrameInputs<'a> {
             .iter()
             .find(|(p, _)| p == path)
             .map(|(_, input)| input)
+    }
+
+    pub fn set_annotation_glyphs(&mut self, glyphs: Vec<crate::text::GlyphQuad>) -> &mut Self {
+        self.annotation_glyphs = glyphs;
+        self
     }
 
     pub fn set_caption(&mut self, caption: CaptionFrame) -> &mut Self {
@@ -242,6 +270,7 @@ pub struct Compositor {
     shadow: ShadowPass,
     card: CardPass,
     shape: ShapePass,
+    component: ComponentPass,
     region: RegionPass,
     image: ImagePass,
     sprite: SpritePass,
@@ -293,6 +322,11 @@ struct YuvPass {
     planes: Option<(u32, u32, PlaneLayout, Vec<wgpu::Texture>)>,
 }
 
+struct ComponentPass {
+    pipeline: wgpu::RenderPipeline,
+    layout: wgpu::BindGroupLayout,
+}
+
 struct ShapePass {
     pipeline: wgpu::RenderPipeline,
     layout: wgpu::BindGroupLayout,
@@ -339,6 +373,7 @@ impl Compositor {
             shadow: ShadowPass::new(&device),
             card: CardPass::new(&device),
             shape: ShapePass::new(&device),
+            component: ComponentPass::new(&device),
             region: RegionPass::new(&device),
             image: ImagePass::new(&device),
             sprite: SpritePass::new(&device),
@@ -372,6 +407,15 @@ impl Compositor {
         self.blur_background(&mut encoder, &working_view, params, width, height);
         let stats = self.draw_layers(&mut encoder, &working_view, params, inputs, width, height);
         self.draw_annotations(&mut encoder, &working_view, params, inputs, width, height);
+        // With the annotations, not the captions: a text annotation keeps the z order its author gave it.
+        self.text.draw(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &working_view,
+            &inputs.annotation_glyphs,
+            (width, height),
+        );
         self.draw_cursor(&mut encoder, &working_view, params, inputs, width, height);
         // Captions last: they sit above the pointer, as the DOM overlay does.
         self.draw_caption_pill(&mut encoder, &working_view, &inputs.caption);
@@ -383,6 +427,7 @@ impl Compositor {
             &inputs.caption.glyphs,
             (width, height),
         );
+        self.draw_components(&mut encoder, &working_view, params);
         self.present(&mut encoder, &working_view, target);
 
         self.queue.submit([encoder.finish()]);
@@ -410,6 +455,8 @@ impl Compositor {
                 radius: pill.radius,
             },
             fill: pill.color,
+            rides_card: false,
+            warp: None,
             stroke: recast_color::TRANSPARENT,
             stroke_width: 0.0,
             alpha: 1.0,
@@ -970,6 +1017,7 @@ impl Compositor {
             radius,
             opacity,
             path,
+            fit,
         } = &annotation.shape
         else {
             return;
@@ -992,8 +1040,14 @@ impl Compositor {
             0,
             bytemuck::bytes_of(&RegionUniform {
                 rect: [*x, *y, *w, *h],
-                params: [radius.max(0.0), opacity * annotation.alpha, 0.0, 0.0],
+                params: [
+                    radius.max(0.0),
+                    opacity * annotation.alpha,
+                    fit_code(*fit),
+                    0.0,
+                ],
                 tint: [0.0; 4],
+                warp: warp_rows(annotation.warp.as_ref()),
             }),
         );
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1091,6 +1145,7 @@ impl Compositor {
                 rect: [x, y, w, h],
                 params: [radius.max(0.0), 0.0, 0.0, 0.0],
                 tint: srgba_parts(tint),
+                warp: warp_rows(annotation.warp.as_ref()),
             }),
         );
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1141,6 +1196,64 @@ impl Compositor {
         match &self.region.blurred {
             Some((_, _, texture)) => texture.create_view(&Default::default()),
             None => unreachable!("the blurred target was just created"),
+        }
+    }
+
+    /// The topmost layers, in document order, after everything the recording itself put on screen.
+    fn draw_components(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        working: &wgpu::TextureView,
+        params: &FrameParams,
+    ) {
+        if params.components.is_empty() {
+            return;
+        }
+        let mut buffers = Vec::with_capacity(params.components.len());
+        let mut bind_groups = Vec::with_capacity(params.components.len());
+        for component in &params.components {
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("component-uniform"),
+                size: std::mem::size_of::<ComponentUniform>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            self.queue.write_buffer(
+                &buffer,
+                0,
+                bytemuck::bytes_of(&component_uniform(component, params)),
+            );
+            bind_groups.push(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("component"),
+                layout: &self.component.layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            }));
+            buffers.push(buffer);
+        }
+
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("components"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: working,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.component.pipeline);
+        for bind_group in &bind_groups {
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.draw(0..3, 0..1);
         }
     }
 
@@ -1264,6 +1377,7 @@ impl Compositor {
             params: [1.0, 0.0, 0.0, alpha.clamp(0.0, 1.0)],
             fill: srgba_parts(color),
             stroke: [0.0; 4],
+            warp: [[0.0; 4]; 3],
         };
         let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("cursor-shape"),
@@ -1540,6 +1654,7 @@ fn shadow_uniform(shadow: &ShadowParams) -> ShadowUniform {
             shadow.offset_y_px,
             shadow.radius_px,
         ],
+        warp: warp_rows(shadow.warp.as_ref()),
         tint: [
             shadow.color.r as f32 / 255.0,
             shadow.color.g as f32 / 255.0,
@@ -1547,6 +1662,46 @@ fn shadow_uniform(shadow: &ShadowParams) -> ShadowUniform {
             shadow.opacity,
         ],
     }
+}
+
+/// The inverse of a card's tilt as the SDF passes take it, or a flagged-off identity when the card is flat.
+/// What the image shader switches on. Numbers rather than an enum because a uniform lane is a float.
+fn fit_code(fit: recast_scene::composition::Fit) -> f32 {
+    use recast_scene::composition::Fit;
+    match fit {
+        Fit::Fill => 0.0,
+        Fit::Cover => 1.0,
+        Fit::Contain => 2.0,
+    }
+}
+
+fn component_uniform(
+    component: &crate::component::ComponentParams,
+    params: &FrameParams,
+) -> ComponentUniform {
+    ComponentUniform {
+        rect: component.rect,
+        canvas: [
+            params.geometry.canvas_w as f32,
+            params.geometry.canvas_h as f32,
+            component.progress,
+            component.recipe as f32,
+        ],
+        p0: component.p0,
+        p1: component.p1,
+        tint: srgba_parts(component.tint),
+        tint2: srgba_parts(component.tint2),
+        warp: warp_rows(component.warp.as_ref()),
+    }
+}
+
+fn warp_rows(warp: Option<&crate::plane::Homography>) -> [[f32; 4]; 3] {
+    let Some(inverse) = warp.and_then(|w| w.inverse()) else {
+        return [[0.0; 4]; 3];
+    };
+    let mut rows = inverse.rows();
+    rows[2][3] = 1.0;
+    rows
 }
 
 fn srgba_parts(color: recast_color::Srgba) -> [f32; 4] {
@@ -1577,6 +1732,7 @@ fn shape_uniform(annotation: &AnnotationParams) -> ShapeUniform {
         params: [kind, detail, annotation.stroke_width, annotation.alpha],
         fill: srgba_parts(annotation.fill),
         stroke: srgba_parts(annotation.stroke),
+        warp: warp_rows(annotation.warp.as_ref()),
     }
 }
 
@@ -1597,7 +1753,7 @@ fn card_uniform(
             if needs_srgb_decode { 1.0 } else { 0.0 },
             layer.rotate,
             streak_length(layer),
-            0.0,
+            if layer.plane.is_some() { 1.0 } else { 0.0 },
         ],
         focus: [
             layer.zoom_center[0],
@@ -1608,7 +1764,24 @@ fn card_uniform(
             },
             0.0,
         ],
+        plane_a: plane_corners(layer, 0),
+        plane_b: plane_corners(layer, 2),
+        plane_w: layer.plane.map_or([1.0; 4], |p| p.depth),
+        material: layer.material.lanes(),
     }
+}
+
+/// Two consecutive projected corners as one vec4; the flat rect's own corners when there is no plane.
+fn plane_corners(layer: &LayerParams, first: usize) -> [f32; 4] {
+    let d = layer.dest;
+    let flat = [
+        [d.x, d.y],
+        [d.x + d.w, d.y],
+        [d.x + d.w, d.y + d.h],
+        [d.x, d.y + d.h],
+    ];
+    let c = layer.plane.map_or(flat, |p| p.corners);
+    [c[first][0], c[first][1], c[first + 1][0], c[first + 1][1]]
 }
 
 /// Streak length in source UV. Velocity-driven, so the blur fires during a ramp and vanishes on the hold; `MAX_STREAK` keeps a fast ramp from smearing the whole frame.
@@ -1922,6 +2095,34 @@ impl SpritePass {
             }),
             sampler: clamped_linear_sampler(device, "sprite"),
         }
+    }
+}
+
+impl ComponentPass {
+    fn new(device: &wgpu::Device) -> Self {
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("component"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let pipeline = fullscreen_pipeline(
+            device,
+            "component",
+            include_str!("shaders/component.wgsl"),
+            &layout,
+            WORKING_FORMAT,
+            Some(PREMULTIPLIED),
+            "vs",
+        );
+        Self { pipeline, layout }
     }
 }
 
@@ -2286,6 +2487,8 @@ mod tests {
             },
             rotate: 0.0,
             corner_radius: 0.0,
+            plane: None,
+            material: recast_scene::material::Material::NONE,
             blur: 0.0,
             motion_blur,
             zoom_center: [0.5, 0.5],
@@ -2330,6 +2533,9 @@ mod tests {
             cursor_draw: None,
             layers,
             annotations: Vec::new(),
+            components: Vec::new(),
+            annotation_text: Vec::new(),
+            text_draws: Vec::new(),
             source_time: 0.0,
         }
     }
@@ -2344,11 +2550,14 @@ mod tests {
                 radius: 0.0,
                 opacity: 1.0,
                 path: path.into(),
+                fit: recast_scene::composition::Fit::Fill,
             },
             fill: Srgba::opaque(0, 0, 0),
             stroke: Srgba::opaque(0, 0, 0),
             stroke_width: 0.0,
             alpha: 1.0,
+            rides_card: true,
+            warp: None,
         }
     }
 
@@ -2442,6 +2651,10 @@ mod tests {
     fn the_uniforms_match_the_std140_sizes_the_shaders_declare() {
         assert_eq!(std::mem::size_of::<BackgroundUniform>(), 16 * 3 + 16 * 8);
         assert_eq!(std::mem::size_of::<BlurUniform>(), 16);
-        assert_eq!(std::mem::size_of::<CardUniform>(), 16 * 6);
+        assert_eq!(std::mem::size_of::<ShadowUniform>(), 16 * 6);
+        assert_eq!(std::mem::size_of::<ShapeUniform>(), 16 * 7);
+        assert_eq!(std::mem::size_of::<CardUniform>(), 16 * 10);
+        assert_eq!(std::mem::size_of::<RegionUniform>(), 16 * 6);
+        assert_eq!(std::mem::size_of::<ComponentUniform>(), 16 * 9);
     }
 }

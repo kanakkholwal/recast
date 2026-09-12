@@ -40,7 +40,7 @@ export interface PerspectiveControlProps {
       <button
         type="button"
         class={cn(
-          "rounded-md border px-2 py-1 text-xs font-medium transition-colors",
+          "rounded-md border px-2 py-1 text-xs font-medium transition-[colors,transform] motion-safe:active:scale-[0.97]",
           active
             ? "border-transparent bg-foreground text-background"
             : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",

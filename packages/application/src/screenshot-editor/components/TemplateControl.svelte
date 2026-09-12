@@ -9,7 +9,9 @@ export interface TemplateControlProps {
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
   import { Button } from "@recast/ui/button";
+  import { cn } from "@recast/ui/utils";
   import { Star, Plus, Trash2 } from "@recast/icons";
+  import { CARD_IDLE, CARD_SELECTED } from "../selection";
   import { TEMPLATE_PRESETS } from "../presets";
   import { deleteCustomPreset, listCustomPresets, saveCustomPreset } from "../persistence";
   import type { CustomPreset } from "../types";
@@ -36,11 +38,10 @@ export interface TemplateControlProps {
     {#each TEMPLATE_PRESETS as t (t.id)}
       <button
         type="button"
-        class="ring-offset-background focus-visible:ring-ring group flex flex-col overflow-hidden rounded-lg border transition focus-visible:ring-2 focus-visible:outline-none"
-        class:border-foreground={editor.backgroundId === t.backgroundId}
-        class:ring-1={editor.backgroundId === t.backgroundId}
-        class:ring-foreground={editor.backgroundId === t.backgroundId}
-        class:border-border={editor.backgroundId !== t.backgroundId}
+        class={cn(
+          "focus-visible:ring-ring group flex flex-col overflow-hidden rounded-lg border transition focus-visible:ring-2 focus-visible:outline-none",
+          editor.backgroundId === t.backgroundId ? CARD_SELECTED : CARD_IDLE,
+        )}
         onclick={() => editor.applyTemplate(t)}
       >
         <span class="block h-10 w-full" style:background={t.swatch}></span>

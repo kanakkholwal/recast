@@ -23,6 +23,7 @@ export interface BackgroundControlProps {
   import { IMAGE_BACKGROUND_CATEGORIES, imageBackgroundCss } from "../image-backgrounds";
   import type { BackgroundPreset } from "../types";
   import type { ImageBackground } from "../image-backgrounds";
+  import { CARD_IDLE, CARD_SELECTED, SWATCH_SELECTED } from "../selection";
 
   let { editor }: BackgroundControlProps = $props();
 
@@ -82,15 +83,13 @@ export interface BackgroundControlProps {
   const tileClass = (active: boolean) =>
     cn(
       "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 transition-colors",
-      active
-        ? "border-foreground/60 ring-1 ring-inset ring-foreground/20"
-        : "border-border hover:bg-accent",
+      active ? CARD_SELECTED : CARD_IDLE,
     );
 
   const swatchClass = (active: boolean) =>
     cn(
-      "border-border aspect-square border transition-transform hover:scale-105",
-      active ? "ring-foreground/60 rounded-full ring-2 ring-offset-1" : "rounded-lg",
+      "border-border aspect-square rounded-lg border transition-transform hover:scale-105",
+      active && SWATCH_SELECTED,
     );
 </script>
 
@@ -230,8 +229,8 @@ export interface BackgroundControlProps {
         <button
           type="button"
           class={cn(
-            "border-border aspect-video overflow-hidden border transition-transform hover:scale-105",
-            editor.backgroundId === img.id ? "ring-foreground/60 rounded-lg ring-2 ring-offset-1" : "rounded-lg",
+            "border-border aspect-video overflow-hidden rounded-lg border transition-transform hover:scale-105",
+            editor.backgroundId === img.id && SWATCH_SELECTED,
           )}
           aria-label={img.id}
           aria-pressed={editor.backgroundId === img.id}

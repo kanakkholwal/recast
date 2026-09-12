@@ -17,7 +17,7 @@ let { label, children, alignTop = false, class: className }: Props = $props();
 
 <div
 	class={cn(
-		"flex gap-2",
+		"flex gap-2 mb-2 last:mb-0",
 		alignTop ? "items-start" : "items-center",
 		className,
 	)}

@@ -5,12 +5,18 @@ import "../app.css";
 // Loaded once globally so any route that mounts <RecastPlayer> gets its styling.
 import "@recast/player/styles.css";
 
-import { setAgentSessionDriver, setEditorHostHooks, setLogSink } from "@recast/editor";
+import {
+	setAgentSessionDriver,
+	setDocumentDriver,
+	setEditorHostHooks,
+	setLogSink,
+} from "@recast/editor";
 import { setEditorServicesForApp } from "@recast/editor/lib/editor/services";
 import { onNavigate } from "$app/navigation";
 import { navigating, page } from "$app/state";
 import { handleDeepLink } from "$lib/deepLink";
 import { tauriAgentSessionDriver } from "$lib/editor/agent-session.tauri";
+import { tauriDocumentDriver } from "$lib/editor/document-driver.tauri";
 import { tauriEditorServices } from "$lib/editor/services.tauri";
 import { launchRecordingPanel, takePendingNewRecording, takePendingOpenFile } from "$lib/ipc";
 import { openProjectFromExternalPath } from "$lib/openProject";
@@ -33,6 +39,7 @@ setEditorHostHooks({
 });
 // Without a driver installed the listener stays idle, which is the web build's behaviour.
 setAgentSessionDriver(tauriAgentSessionDriver);
+setDocumentDriver(tauriDocumentDriver);
 setLogSink(log);
 
 // First-run privacy prompt, shown once in the main window only.

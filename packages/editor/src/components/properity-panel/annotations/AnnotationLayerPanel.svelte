@@ -190,7 +190,7 @@ function handleDragEnd() {
           >{kindLabel(a)}</button>
         {/if}
         <span class="text-[10px] tabular-nums text-muted-foreground">
-          {fmtTime(a.start)}–{fmtTime(a.end)}
+          {fmtTime(store.displaySec(a.start))}–{fmtTime(store.displaySec(a.end))}
         </span>
       </div>
 

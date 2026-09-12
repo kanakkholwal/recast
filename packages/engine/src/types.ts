@@ -10,6 +10,8 @@ export interface WasmPreviewEngine {
 	adapterName(): string;
 	isSoftware(): boolean;
 	setScene(json: string): void;
+	/** A few changed top-level state fields merged into the last `setScene` state; throws before any setScene. */
+	patchScene(json: string): void;
 	setSourceSize(width: number, height: number): void;
 	setCanvasSize(width: number, height: number): void;
 	screenLayerId(): number | undefined;
@@ -25,6 +27,15 @@ export interface WasmPreviewEngine {
 	setCursorTrack(json: string): void;
 	setCaptionTrack(json: string): void;
 	setCaptionFont(data: Uint8Array, index: number): boolean;
+	setEditingAnnotation(id: string | undefined): void;
+	setTextFont(family: string, weight: number, data: Uint8Array, index: number): boolean;
+	/** JSON `[{stack, weight}]`: every face the scene's words ask for. */
+	wantedFaces(): string;
+	/** JSON `{stack, weight}`: the face unnamed or unfound families draw with. */
+	fallbackFace(): string;
+	/** JSON array of every image file the scene draws, composition slides included. */
+	wantedImages(): string;
+	setDrawAnnotationText(on: boolean): void;
 	setCursorSprite(slot: CursorSlot, image: ImageBitmap, hotspotX: number, hotspotY: number): void;
 	setAnnotationImage(path: string, image: ImageBitmap): void;
 	clearAnnotationImages(): void;
@@ -36,9 +47,32 @@ export interface WasmPreviewEngine {
 	outputDuration(): number;
 }
 
+/** The webview's copy of a v3 project document (`crates/recast-project` compiled in). Same rules as
+ *  `WasmPreviewEngine`: the `#[wasm_bindgen]` surface in `crates/recast-ffi-wasm/src/document.rs` is the truth. */
+export interface WasmProjectDocument {
+	free(): void;
+	/** Canonical text, byte-identical to what the core writes. */
+	text(): string;
+	hash(): string;
+	/** Applies a JSON array of ops, all or nothing; returns how many landed. Throws a string. */
+	apply(opsJson: string): number;
+	/** The editor render state as JSON. */
+	renderState(): string;
+	/** JSON array of ops that take this document to the one the state describes; `[]` when nothing moved. */
+	opsForState(stateJson: string): string;
+	/** The same for a few changed fields merged into the last whole state; throws before any whole state. */
+	opsForPatch(patchJson: string): string;
+	/** Validation findings as JSON. */
+	issues(): string;
+	clone(): WasmProjectDocument;
+}
+
 export interface EngineModule {
 	PreviewEngine: {
 		create(canvas: unknown, backend?: string | null): Promise<WasmPreviewEngine>;
+	};
+	ProjectDocument: {
+		parse(text: string): WasmProjectDocument;
 	};
 }
 

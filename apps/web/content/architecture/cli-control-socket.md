@@ -23,6 +23,7 @@ invariants:
   - "The event log is fed by one listener set for the life of the process, not one per connection, or replay would only cover connected time."
   - "The write lock is re-entrant for the same writer; without that, an agent's second edit fails naming itself as the holder."
   - "An unknown watch group matches nothing rather than erroring, so a newer CLI degrades to silence against an older app."
+  - "Only the instance that won the socket bind writes the token file; a second one writing it first left the socket owner rejecting every call as unauthorized."
 ---
 
 ## Overview
@@ -41,6 +42,12 @@ Auth is two layers. The socket or pipe ACL gates it to the same OS user; on top
 of that `run_server` writes a random token to a 0600 file in the temp dir
 (`token_path`, `control/mod.rs`) that the CLI reads and echoes in every
 request. The token is defence in depth, not the boundary.
+
+The token is written only after the bind succeeds. Both files are process-wide
+but the socket admits one owner, so an instance that wrote the token and then
+lost the bind (two builds running, say) would leave the owner rejecting every
+CLI call as unauthorized. `status` reports the answering `exe` and `pid` so the
+instance you reached is never a guess.
 
 The target consumer is an agent: introspect, edit through the branch layer,
 export, and follow what happened without polling.
@@ -73,8 +80,8 @@ flowchart LR
 | Component | File | Responsibility |
 |---|---|---|
 | `CLI_VERBS` | `cli.rs` | The list `main` matches `argv[1]` against to stay headless. Hand-maintained, separate from clap |
-| `Command` | `cli.rs` | The clap tree: `select`, `set`, `project`, `editor`, `branch`, `export`, `screenshot`, `transcribe`, `watch`, `mcp`, `install` |
-| `run_server` | `control/mod.rs` | Binds the socket, writes the token, registers the event listeners **once** for the process |
+| `Command` | `cli.rs` | The clap tree: `select`, `set`, `project`, `editor`, `branch`, `export`, `screenshot`, `transcribe`, `watch`, `mcp`, `skills`, `install` |
+| `run_server` | `control/mod.rs` | Registers the event listeners **once** for the process, binds the socket, then writes the token |
 | `dispatch` | `control/mod.rs` | `(app, method, params) -> Result<Value, String>`; arms stay thin and delegate to shared services |
 | `EVENT_GROUPS` | `control/mod.rs` | One table mapping `rec`/`selection`/`profiles`/`editor`/`export` to event names; drives both the filter and the feed |
 | `handle_watch` | `control/mod.rs` | Cursor replay, group filter, 15s keepalive, lagged frame |

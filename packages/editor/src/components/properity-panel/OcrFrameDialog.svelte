@@ -15,8 +15,10 @@ interface Props {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	onSeek: (t: number) => void;
+	/** Source seconds to the position the viewer sees, since a cut moves every later frame. */
+	displaySec: (t: number) => number;
 }
-let { span, open, onOpenChange, onSeek }: Props = $props();
+let { span, open, onOpenChange, onSeek, displaySec }: Props = $props();
 
 // Raw capture versus annotated capture is how you check the OCR against what was on screen; annotated is the default.
 let annotated = $state(true);
@@ -51,8 +53,8 @@ function jump() {
 {#if span}
   <DialogShell
     {open}
-    title={`Screen at ${clock(span.start)}`}
-    subtitle={`Held until ${clock(span.end)} · ${span.elements.length} ${span.elements.length === 1 ? "element" : "elements"} read`}
+    title={`Screen at ${clock(displaySec(span.start))}`}
+    subtitle={`Held until ${clock(displaySec(span.end))} · ${span.elements.length} ${span.elements.length === 1 ? "element" : "elements"} read`}
     icon={SquareDashedMousePointer}
     widthClass="sm:max-w-4xl"
     {onOpenChange}
@@ -74,7 +76,7 @@ function jump() {
                found; in "Original" it is the raw capture, to check the read against. -->
           <div class="border-border bg-muted relative overflow-hidden rounded-lg border">
             {#if span.preview}
-              <img src={span.preview} alt="Frame read at {clock(span.start)}" class="block w-full" />
+              <img src={span.preview} alt="Frame read at {clock(displaySec(span.start))}" class="block w-full" />
             {:else}
               <div class="text-muted-foreground flex aspect-video items-center justify-center text-xs">
                 No preview was captured for this frame.
@@ -157,7 +159,7 @@ function jump() {
             Copy as text
           {/if}
         </Button>
-        <Button size="xs" onclick={jump}>Jump to {clock(span.start)}</Button>
+        <Button size="xs" onclick={jump}>Jump to {clock(displaySec(span.start))}</Button>
       {/snippet}
   </DialogShell>
 {/if}

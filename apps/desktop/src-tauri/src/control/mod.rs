@@ -1,6 +1,7 @@
 //! Local control channel: the GUI serves one JSON request per connection on a named pipe or Unix socket.
 //! Needed because the single-instance argv path is one-way and cannot answer a query; a 0600 token file backs the socket ACL.
 
+pub mod doc;
 mod events;
 
 use std::io::{BufRead, BufReader, Write};
@@ -12,8 +13,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::Emitter;
 
-use crate::commands::{BranchService, BranchSummary, BRANCHES_CHANGED_EVENT};
-use crate::project::journal::BranchId;
+use crate::agent::axis::time_map;
+use crate::agent::check::{check, ProjectFacts};
+use crate::agent::guard::{within_budget, ProjectPath};
+use crate::agent::intents::{SilencePolicy, ZoomIntent};
+use crate::agent::perception::{silences_view, transcript_view, transcript_words, CONTENT_LABEL};
+use crate::agent::track::{TrackView, Window};
+use crate::commands::types::EditorDocument;
+use crate::commands::{BranchService, BRANCHES_CHANGED_EVENT};
+use crate::project::journal::{BranchId, StateHash};
 use crate::render::graph::RenderState;
 use crate::render::ops::{apply_op, Op};
 use crate::render::scene_anim::SceneAnimSpec;
@@ -109,7 +117,6 @@ fn feed_event_log(app: &tauri::AppHandle) {
 
 fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
     feed_event_log(app);
-    let token = write_token()?;
     let socket = socket_name();
     let name = socket
         .clone()
@@ -126,6 +133,8 @@ fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
             return Err(format!("bind {socket}: {e}"));
         }
     };
+    // Bind first: an instance that wrote the token then lost the bind left the socket owner rejecting every call.
+    let token = write_token()?;
     log::info!("cli control server listening on {socket}");
 
     // One thread per connection so a long-lived `watch` never blocks `status` or `rec` from being answered.
@@ -313,6 +322,55 @@ fn branch_id(params: &Value, method: &str) -> Result<BranchId, String> {
     BranchId::new(require_str(params, "branch", method)?).map_err(stringify)
 }
 
+/// A project path that passed the agent guard, so a verb never opens a file it was not meant to.
+fn guarded_path(params: &Value, method: &str) -> Result<String, String> {
+    let raw = require_str(params, "path", method)?;
+    Ok(ProjectPath::parse(&raw).map_err(stringify)?.as_str())
+}
+
+fn load_doc(path: &str) -> Result<EditorDocument, String> {
+    tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+        .map_err(stringify)
+}
+
+/// `from`/`to` in output seconds; either alone is open-ended on the other side.
+fn window_of(params: &Value) -> Result<Option<Window>, String> {
+    let from = params.get("from").and_then(Value::as_f64);
+    let to = params.get("to").and_then(Value::as_f64);
+    if from.is_none() && to.is_none() {
+        return Ok(None);
+    }
+    Window::new(from.unwrap_or(0.0), to.unwrap_or(f64::MAX))
+        .map(Some)
+        .map_err(stringify)
+}
+
+/// The hash the caller read, as they spelled it; each journal format parses its own.
+fn expect_base(params: &Value) -> Result<Option<String>, String> {
+    Ok(params
+        .get("expectBase")
+        .and_then(Value::as_str)
+        .map(str::to_owned))
+}
+
+fn f64_or(params: &Value, key: &str, default: f64) -> f64 {
+    params.get(key).and_then(Value::as_f64).unwrap_or(default)
+}
+
+fn require_f64(params: &Value, key: &str, method: &str) -> Result<f64, String> {
+    params
+        .get(key)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| format!("{method} requires {key}"))
+}
+
+/// Recording content goes out labelled and within budget, so the model can tell data from the tool's own words.
+fn content_result(view: TrackView, hint: &str) -> Result<Value, String> {
+    let mut value = serde_json::to_value(view).map_err(stringify)?;
+    value["label"] = json!(CONTENT_LABEL);
+    Ok(within_budget(value, hint))
+}
+
 fn branches<'a>(
     app: &'a tauri::AppHandle,
     state: &'a crate::commands::types::AppState,
@@ -396,11 +454,19 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
     let state = app.state::<crate::commands::types::AppState>();
     let manager = &state.recording_manager;
 
+    if let Some(result) = doc::dispatch(method, &params) {
+        return result;
+    }
+    if let Some(result) = doc::dispatch_live(app, method, &params) {
+        return result;
+    }
     match method {
         "status" => Ok(json!({
             "recording": manager.is_recording(),
             "paused": manager.is_paused(),
             "version": app.package_info().version.to_string(),
+            "exe": std::env::current_exe().ok(),
+            "pid": std::process::id(),
         })),
         "rec.status" => Ok(json!({
             "recording": manager.is_recording(),
@@ -521,10 +587,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.open requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             serde_json::to_value(doc).map_err(|e| e.to_string())
         }
         "editor.show" => {
@@ -532,10 +597,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.show requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             serde_json::to_value(doc.render_state).map_err(|e| e.to_string())
         }
         "editor.timeline" => {
@@ -543,10 +607,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.timeline requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             let tl =
                 crate::commands::derive_project_timeline(&doc.render_state, doc.metadata.duration);
             serde_json::to_value(tl).map_err(|e| e.to_string())
@@ -556,10 +619,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.zoom-regions requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             serde_json::to_value(doc.render_state.zoom_regions).map_err(|e| e.to_string())
         }
         "editor.annotations" => {
@@ -567,10 +629,9 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.annotations requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
-                path.to_string(),
-            ))
-            .map_err(|e| e.to_string())?;
+            let doc =
+                tauri::async_runtime::block_on(crate::commands::load_document(path.to_string()))
+                    .map_err(|e| e.to_string())?;
             serde_json::to_value(doc.render_state.annotations).map_err(|e| e.to_string())
         }
         // `export.show` filters the same list by id; a second method would just be SELECT * WHERE id=?.
@@ -713,7 +774,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.cut.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -761,7 +822,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.zoom.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -850,7 +911,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.split-point.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -895,7 +956,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.speed.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -947,7 +1008,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.annotations.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -1082,7 +1143,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .get("path")
                 .and_then(Value::as_str)
                 .ok_or("editor.animations.list requires a path")?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;
@@ -1182,7 +1243,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                         .map(str::to_string),
                 )
                 .map_err(stringify)?;
-            serde_json::to_value(BranchSummary::from(&branch)).map_err(stringify)
+            serde_json::to_value(branch).map_err(stringify)
         }
         "branch.list" => {
             let project = require_str(&params, "path", method)?;
@@ -1193,23 +1254,151 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
         }
         "branch.append" => {
             let project = require_str(&params, "path", method)?;
-            let ops: Vec<Op> = serde_json::from_value(
-                params
-                    .get("ops")
-                    .cloned()
-                    .ok_or_else(|| format!("{method} requires ops"))?,
-            )
-            .map_err(|e| format!("{method}: invalid ops: {e}"))?;
-            let report = branches(app, state.inner())
+            let ops = params
+                .get("ops")
+                .cloned()
+                .ok_or_else(|| format!("{method} requires ops"))?;
+            let receipt = branches(app, state.inner())
                 .append(
                     &project,
                     &branch_id(&params, method)?,
                     require_str(&params, "idemKey", method)?,
                     ops,
                     params.get("expectSeq").and_then(Value::as_u64),
+                    expect_base(&params)?,
                 )
                 .map_err(stringify)?;
-            serde_json::to_value(report).map_err(stringify)
+            serde_json::to_value(receipt).map_err(stringify)
+        }
+        "editor.head" => {
+            let doc = load_doc(&guarded_path(&params, method)?)?;
+            let facts = ProjectFacts::of(&doc);
+            let state = &doc.render_state;
+            let map = time_map(state);
+            let hash = StateHash::of(state).map_err(stringify)?;
+            Ok(json!({
+                "hash": hash,
+                "needsMigration": doc.needs_migration,
+                "sourceDuration": doc.metadata.duration,
+                "outputDuration": map.output_duration,
+                "segments": map.spans.iter().map(|s| json!({
+                    "srcStart": s.orig_start, "srcEnd": s.orig_end,
+                    "outStart": s.out_start, "outEnd": s.out_end, "speed": s.speed,
+                })).collect::<Vec<_>>(),
+                "cuts": state.cuts.len(),
+                "zooms": state.zoom_regions.len(),
+                "annotations": state.annotations.len(),
+                "lanes": {
+                    "zooms": state.focus_enabled,
+                    "annotations": state.annotations_enabled,
+                    "captions": state.caption_style.as_ref().is_some_and(|c| c.enabled),
+                    "camera": state.camera_overlay.enabled,
+                    "cursor": state.cursor_enabled,
+                },
+                "media": {
+                    "camera": facts.has_camera,
+                    "cursorTrack": facts.has_cursor_track,
+                    "words": transcript_words(state).len(),
+                },
+            }))
+        }
+        "agent.check" => {
+            let doc = load_doc(&guarded_path(&params, method)?)?;
+            serde_json::to_value(check(&doc.render_state, &ProjectFacts::of(&doc)))
+                .map_err(stringify)
+        }
+        "agent.transcript" => {
+            let doc = load_doc(&guarded_path(&params, method)?)?;
+            let view = transcript_view(
+                &doc.render_state,
+                &time_map(&doc.render_state),
+                window_of(&params)?,
+            );
+            content_result(
+                view,
+                "pass from and to (output seconds) for a narrower window",
+            )
+        }
+        "agent.silences" => {
+            let doc = load_doc(&guarded_path(&params, method)?)?;
+            let segments = crate::silence::detect_blocking(
+                doc.audio_path.as_deref(),
+                doc.microphone_path.as_deref(),
+                doc.cursor_path.as_deref(),
+                Default::default(),
+            )?;
+            let view = silences_view(&segments, &time_map(&doc.render_state), window_of(&params)?);
+            content_result(
+                view,
+                "pass from and to (output seconds) for a narrower window",
+            )
+        }
+        "agent.frames" => {
+            let project = guarded_path(&params, method)?;
+            let doc = load_doc(&project)?;
+            let count = params
+                .get("count")
+                .and_then(Value::as_u64)
+                .map_or(crate::agent::frames::DEFAULT_FRAMES, |n| n as u32);
+            let media = std::path::PathBuf::from(&doc.media_path);
+            let extract = |source: f64, width: u32| {
+                crate::commands::extract_single_thumbnail(&media, source, width)
+            };
+            let view = crate::agent::frames::frames_view(
+                &project,
+                &time_map(&doc.render_state),
+                window_of(&params)?,
+                count,
+                &extract,
+            )
+            .map_err(|e| format!("frames: {e}"))?;
+            serde_json::to_value(view).map_err(stringify)
+        }
+        "agent.remove-silences" => {
+            let project = guarded_path(&params, method)?;
+            let defaults = SilencePolicy::default();
+            let policy = SilencePolicy {
+                min_duration: f64_or(&params, "minDuration", defaults.min_duration),
+                pad: f64_or(&params, "pad", defaults.pad),
+                min_confidence: f64_or(&params, "minConfidence", f64::from(defaults.min_confidence))
+                    as f32,
+            };
+            let receipt = branches(app, state.inner())
+                .remove_silences(
+                    &project,
+                    &branch_id(&params, method)?,
+                    require_str(&params, "idemKey", method)?,
+                    policy,
+                    expect_base(&params)?,
+                )
+                .map_err(stringify)?;
+            serde_json::to_value(receipt).map_err(stringify)
+        }
+        "agent.add-zoom" => {
+            let project = guarded_path(&params, method)?;
+            let idem_key = require_str(&params, "idemKey", method)?;
+            let intent = ZoomIntent {
+                id: params
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map_or_else(|| format!("zoom-{idem_key}"), str::to_string),
+                at: require_f64(&params, "at", method)?,
+                duration: f64_or(&params, "duration", 3.0),
+                center_x: f64_or(&params, "centerX", 0.5),
+                center_y: f64_or(&params, "centerY", 0.5),
+                scale: f64_or(&params, "scale", 1.8),
+                ramp: f64_or(&params, "ramp", 0.5),
+            };
+            let receipt = branches(app, state.inner())
+                .add_zoom(
+                    &project,
+                    &branch_id(&params, method)?,
+                    idem_key,
+                    &intent,
+                    expect_base(&params)?,
+                )
+                .map_err(stringify)?;
+            serde_json::to_value(receipt).map_err(stringify)
         }
         "branch.truncate" => {
             let project = require_str(&params, "path", method)?;
@@ -1340,7 +1529,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 writer_id_for_lock,
             )
             .map_err(|e| e.to_string())?;
-            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+            let doc = tauri::async_runtime::block_on(crate::commands::load_document(
                 path_str.to_string(),
             ))
             .map_err(|e| e.to_string())?;

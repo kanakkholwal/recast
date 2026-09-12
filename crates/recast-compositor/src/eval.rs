@@ -1,12 +1,15 @@
 use recast_color::{Gradient, Srgba};
 use recast_cursor::{CursorPlacement, CursorSettings};
+use recast_scene::bind::Signals;
 use recast_scene::v1::nodes::{ShadowSettings, ZoomRegion};
 use recast_scene::v1::{Easing, SegmentAnim};
 use recast_scene::{Effect, LayerId, LayerSource, Scene};
 use recast_time::{original_to_output, output_to_original, Segment, TimeMap};
 
-use crate::annotation::{annotation_params, sorted_visible, AnnotationParams};
-use crate::camera::{bubble_params, bubble_shadow, BubbleParams};
+use crate::annotation::{
+    annotation_params, sorted_visible, text_params, AnnotationParams, AnnotationShape,
+};
+use crate::camera::{bubble_params_ruled, bubble_shadow, BubbleParams};
 use crate::geometry::{canvas_geometry, CanvasGeometry};
 use crate::layout::ANCHOR_EPS;
 
@@ -133,6 +136,23 @@ pub struct CursorDraw {
 }
 
 impl CursorDraw {
+    /// The pointer is a point ON the recorded screen, so it follows the card's tilt; the sprite itself stays upright.
+    #[must_use]
+    pub fn warped(mut self, warp: Option<&crate::plane::Homography>) -> Self {
+        let Some(warp) = warp else {
+            return self;
+        };
+        let (x, y) = warp.apply(f64::from(self.x), f64::from(self.y));
+        self.x = x as f32;
+        self.y = y as f32;
+        if let Some(h) = self.highlight.as_mut() {
+            let (hx, hy) = warp.apply(f64::from(h.x), f64::from(h.y));
+            h.x = hx as f32;
+            h.y = hy as f32;
+        }
+        self
+    }
+
     /// Scales the pointer and its click ring by the screen's own opacity, so a
     /// layout easing the screen away carries them with it.
     #[must_use]
@@ -184,6 +204,8 @@ pub struct ShadowParams {
     pub half_w: f32,
     pub half_h: f32,
     pub radius_px: f32,
+    /// Flat-card to tilted-card map when the layer is tilted; the pass evaluates its SDF in plane space through it.
+    pub warp: Option<crate::plane::Homography>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -198,6 +220,10 @@ pub struct LayerParams {
     pub rotate: f32,
     /// Fraction of the shorter video edge, 0..0.5.
     pub corner_radius: f32,
+    /// The tilted card's projected corners; `None` draws the flat rect.
+    pub plane: Option<crate::plane::Plane>,
+    /// How the layer catches light; all zero leaves the card exactly as it was.
+    pub material: recast_scene::material::Material,
     pub blur: f32,
     /// Authored 0..1 strength of the dolly blur.
     pub motion_blur: f32,
@@ -232,8 +258,44 @@ pub struct FrameParams {
     pub layers: Vec<LayerParams>,
     /// In draw order: z-index, then insertion order.
     pub annotations: Vec<AnnotationParams>,
+    /// Component instances, in document order, drawn above everything else.
+    pub components: Vec<crate::component::ComponentParams>,
+    /// Words that draw WITH the annotations, below the pointer and the captions.
+    pub annotation_text: Vec<TextItemDraw>,
+    /// Every other word this frame, from a composition's text items and from the
+    /// components that carry words. The session turns them into glyphs; a
+    /// composition's IMAGE items are in `annotations`, drawing through that pass.
+    pub text_draws: Vec<TextItemDraw>,
     /// Where `output_time` lands on the original recording axis.
     pub source_time: f64,
+}
+
+/// Whether an instance puts pixels through the component pass at all.
+/// An unresolved one does: the placeholder is the whole point.
+fn draws_shape(spec: &recast_scene::component::GraphicSpec) -> bool {
+    use recast_scene::component::Resolution;
+    match spec.resolution() {
+        Resolution::Ready { name, .. } => {
+            recast_scene::component::manifest(name).is_some_and(|m| m.shape)
+        }
+        _ => true,
+    }
+}
+
+/// One composition text item, placed in canvas pixels and ready to shape.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextItemDraw {
+    pub rect: [f32; 4],
+    pub content: String,
+    /// The CSS family stack it asked for; empty takes the session's own face.
+    pub font: String,
+    /// Already resolved from the item's share of the frame height.
+    pub size_px: f32,
+    pub color: Srgba,
+    pub align: recast_scene::composition::TextAlign,
+    pub weight: f64,
+    pub line_height: f64,
+    pub alpha: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -279,6 +341,10 @@ pub struct Evaluator {
     segments: Vec<Segment>,
     geometry: CanvasGeometry,
     source: SourceGeometry,
+    /// The annotation the host has a caret in. Its words are left to the host,
+    /// which is drawing them live; everything else about it still renders.
+    /// Not scene data: nothing about which row is being typed into is saved.
+    editing: Option<String>,
 }
 
 impl Evaluator {
@@ -301,7 +367,13 @@ impl Evaluator {
                 scene.output.aspect.as_deref(),
             ),
             source,
+            editing: None,
         }
+    }
+
+    /// Names the annotation the host draws the words of itself, or clears it.
+    pub fn set_editing(&mut self, id: Option<String>) {
+        self.editing = id;
     }
 
     pub fn geometry(&self) -> CanvasGeometry {
@@ -328,6 +400,7 @@ impl Evaluator {
         // A faded-out pointer is reported at (0, 0) so its click ring can still draw; the dodge must not read that corner as somewhere the pointer is.
         let dodge_at = cursor.filter(|c| c.alpha > 0.0).map(|c| (c.x, c.y));
         let focus = scene.flags.focus;
+        let signals = self.signals(scene, source_time, cursor.as_ref(), focus);
         // Resolved before the walk: a split moves the SCREEN too, so the layout has to be known before either layer is placed.
         let layout = self.layout_blend(scene, source_time, output_time);
         let mut background = BackgroundParams::Solid(Srgba::opaque(0x11, 0x11, 0x11));
@@ -342,8 +415,14 @@ impl Evaluator {
             },
             Affine2::IDENTITY,
         );
+        // The screen's tilt, for what rides it: the pointer and video-anchored annotations (06, D-3).
+        let mut card_warp: Option<crate::plane::Homography> = None;
         // The pointer and annotations are anchored to the screen card, so a layout that hides the screen has to take them with it rather than leaving them over the camera.
         let mut card_alpha = 1.0f32;
+        // Collected as they are met and placed afterwards, since a screen recipe needs the card the loop has not reached yet.
+        let mut graphics: Vec<&recast_scene::component::GraphicSpec> = Vec::new();
+        let mut card_radius = 0.0f32;
+        let (composition_images, composition_text) = self.composition_draws(scene, output_time);
 
         for layer in &scene.layers {
             match &layer.source {
@@ -363,14 +442,21 @@ impl Evaluator {
                     background_blur = blur_of(layer);
                 }
                 LayerSource::Camera(settings) => {
-                    let mut params = self.layer_params(layer, source_time, output_time, focus);
+                    let mut params =
+                        self.layer_params(layer, source_time, output_time, focus, &signals);
                     params.cover_fit = true;
                     let follow: Vec<&ZoomRegion> = match focus {
                         true => scene.zoom_regions(),
                         false => Vec::new(),
                     };
-                    let bubble =
-                        bubble_params(settings, &follow, source_time, self.geometry, dodge_at);
+                    let bubble = bubble_params_ruled(
+                        settings,
+                        &layer.placement,
+                        &follow,
+                        source_time,
+                        self.geometry,
+                        dodge_at,
+                    );
                     if let Some(bubble) = &bubble {
                         params.dest = bubble.dest;
                         params.corner_radius = bubble.corner_radius;
@@ -397,13 +483,20 @@ impl Evaluator {
                         };
                         params.shadow = bubble_shadow(settings, &moved).map(|mut shadow| {
                             shadow.opacity *= rounding;
+                            shadow.warp = params.plane.map(|p| p.warp(params.dest));
                             shadow
                         });
                     }
                     layers.push(params);
                 }
+                LayerSource::Graphic(spec) => {
+                    if !layer.hidden && spec.covers(output_time) {
+                        graphics.push(spec);
+                    }
+                }
                 _ => {
-                    let mut params = self.layer_params(layer, source_time, output_time, focus);
+                    let mut params =
+                        self.layer_params(layer, source_time, output_time, focus, &signals);
                     if matches!(layer.source, LayerSource::Screen) {
                         if let Some(rects) = self.layout_rects(&layout, None) {
                             // The card anchors annotations and the cursor, so they follow the screen into its half rather than staying on the full frame.
@@ -412,6 +505,8 @@ impl Evaluator {
                             params.visible = params.visible && rects.screen_opacity > 0.0;
                         }
                         card = (params.dest, params.transform);
+                        card_radius = params.corner_radius;
+                        card_warp = params.plane.map(|p| p.warp(params.dest));
                         card_alpha = match params.visible {
                             true => params.opacity.clamp(0.0, 1.0),
                             false => 0.0,
@@ -432,24 +527,166 @@ impl Evaluator {
             cursor_draw: match card_alpha > 0.0 {
                 true => cursor
                     .and_then(|c| self.cursor_draw(scene, c, card.0, card.1))
-                    .map(|draw| draw.faded_by(card_alpha)),
+                    .map(|draw| draw.warped(card_warp.as_ref()).faded_by(card_alpha)),
                 false => None,
             },
             cursor,
-            annotations: match scene.flags.annotations && card_alpha > 0.0 {
+            // The composition's images lead: an annotation on a composition is still an overlay on top of it.
+            annotations: composition_images
+                .into_iter()
+                .chain(match scene.flags.annotations && card_alpha > 0.0 {
+                    true => self
+                        .annotations(scene, source_time, card.0, card.1, &signals)
+                        .into_iter()
+                        .map(|mut a| {
+                            a.alpha *= card_alpha;
+                            if a.rides_card {
+                                a.warp = card_warp;
+                            }
+                            a
+                        })
+                        .collect(),
+                    false => Vec::new(),
+                })
+                .collect(),
+            annotation_text: match scene.flags.annotations && card_alpha > 0.0 {
                 true => self
-                    .annotations(scene, source_time, card.0, card.1)
+                    .annotation_text(scene, source_time, card.0, card.1)
                     .into_iter()
-                    .map(|mut a| {
-                        a.alpha *= card_alpha;
-                        a
+                    .map(|mut t| {
+                        t.alpha *= card_alpha;
+                        t
                     })
                     .collect(),
                 false => Vec::new(),
             },
+            components: self.components(&graphics, output_time, card.0, card_radius, card_warp),
+            text_draws: composition_text
+                .into_iter()
+                .chain(self.component_text(&graphics, output_time))
+                .collect(),
             layers,
             source_time,
         }
+    }
+
+    /// A composition draws over the whole frame: its items are placed in frame
+    /// fractions, not against a card, because there is no recording to anchor to.
+    fn composition_draws(
+        &self,
+        scene: &Scene,
+        output_time: f64,
+    ) -> (Vec<AnnotationParams>, Vec<TextItemDraw>) {
+        use recast_scene::composition::ItemContent;
+        let Some(composition) = &scene.composition else {
+            return (Vec::new(), Vec::new());
+        };
+        let (cw, ch) = (self.geometry.canvas_w as f32, self.geometry.canvas_h as f32);
+        let mut images = Vec::new();
+        let mut texts = Vec::new();
+        for (item, alpha) in composition.visible(output_time) {
+            let rect = [
+                item.area.x as f32 * cw,
+                item.area.y as f32 * ch,
+                item.area.w as f32 * cw,
+                item.area.h as f32 * ch,
+            ];
+            match &item.content {
+                ItemContent::Image { src, fit, radius } => images.push(AnnotationParams {
+                    shape: AnnotationShape::Image {
+                        x: rect[0],
+                        y: rect[1],
+                        w: rect[2],
+                        h: rect[3],
+                        radius: *radius as f32 * rect[2].abs().min(rect[3].abs()),
+                        opacity: 1.0,
+                        path: src.as_str().into(),
+                        fit: *fit,
+                    },
+                    fill: Srgba::opaque(0, 0, 0),
+                    stroke: Srgba::opaque(0, 0, 0),
+                    stroke_width: 0.0,
+                    alpha: alpha as f32,
+                    rides_card: false,
+                    warp: None,
+                }),
+                ItemContent::Text {
+                    content,
+                    font,
+                    size,
+                    color,
+                    align,
+                    weight,
+                    line_height,
+                } => texts.push(TextItemDraw {
+                    rect,
+                    content: content.clone(),
+                    font: font.clone(),
+                    size_px: (*size * f64::from(ch)) as f32,
+                    color: recast_color::parse_css_color(color)
+                        .unwrap_or(Srgba::opaque(255, 255, 255)),
+                    align: *align,
+                    weight: *weight,
+                    line_height: *line_height,
+                    alpha: alpha as f32,
+                }),
+            }
+        }
+        (images, texts)
+    }
+
+    /// The words the component instances carry, placed inside their own boxes.
+    fn component_text(
+        &self,
+        graphics: &[&recast_scene::component::GraphicSpec],
+        output_time: f64,
+    ) -> Vec<TextItemDraw> {
+        let canvas = [
+            0.0,
+            0.0,
+            self.geometry.canvas_w as f32,
+            self.geometry.canvas_h as f32,
+        ];
+        graphics
+            .iter()
+            .flat_map(|spec| crate::component::text_for(spec, output_time, canvas))
+            .collect()
+    }
+
+    /// Places each instance: an overlay covers the canvas, a screen recipe takes
+    /// the card's rect, rounding and tilt, so a gloss stays on the card.
+    fn components(
+        &self,
+        graphics: &[&recast_scene::component::GraphicSpec],
+        output_time: f64,
+        card: DestRect,
+        card_radius: f32,
+        card_warp: Option<crate::plane::Homography>,
+    ) -> Vec<crate::component::ComponentParams> {
+        use recast_scene::component::Surface;
+        let canvas = [
+            0.0,
+            0.0,
+            self.geometry.canvas_w as f32,
+            self.geometry.canvas_h as f32,
+        ];
+        graphics
+            .iter()
+            // A text-only recipe would draw a pass that only discards.
+            .filter(|spec| draws_shape(spec))
+            .map(|spec| match crate::component::surface_of(spec) {
+                Surface::Screen => crate::component::params_for(
+                    spec,
+                    output_time,
+                    [card.x, card.y, card.w, card.h],
+                    card_radius,
+                    card_warp,
+                ),
+                Surface::Overlay => {
+                    crate::component::params_for(spec, output_time, canvas, 0.0, None)
+                }
+            })
+            .collect()
     }
 
     /// This frame's arrangement: the clip's layout, and the one it is easing out
@@ -581,20 +818,97 @@ impl Evaluator {
         })
     }
 
+    /// The words annotations carry, in the z order their shapes draw in. The one
+    /// the host is editing is left out: it is drawing that itself, live.
+    fn annotation_text(
+        &self,
+        scene: &Scene,
+        source_time: f64,
+        dest: DestRect,
+        transform: Affine2,
+    ) -> Vec<TextItemDraw> {
+        let all = scene.annotations();
+        sorted_visible(&all)
+            .into_iter()
+            .map(|index| all[index])
+            .filter(|a| self.editing.as_deref() != Some(a.id.as_str()))
+            .filter_map(|a| text_params(a, source_time, self.geometry, dest, transform))
+            .collect()
+    }
+
     fn annotations(
         &self,
         scene: &Scene,
         source_time: f64,
         dest: DestRect,
         transform: Affine2,
+        signals: &Signals,
     ) -> Vec<AnnotationParams> {
         let all = scene.annotations();
         sorted_visible(&all)
             .into_iter()
             .filter_map(|index| {
-                annotation_params(all[index], source_time, self.geometry, dest, transform)
+                let annotation = all[index];
+                // A bound opacity replaces the static one before the ramps; the clone happens only when a binding exists.
+                let bound = scene
+                    .layers
+                    .iter()
+                    .find(|l| {
+                        !l.bindings.is_empty()
+                            && matches!(&l.source, LayerSource::Annotation(a) if a.id == annotation.id)
+                    })
+                    .map(|layer| {
+                        let mut driven = annotation.clone();
+                        driven.opacity =
+                            Self::bound_opacity(layer, annotation.opacity, source_time, signals);
+                        driven
+                    });
+                let annotation = bound.as_ref().unwrap_or(annotation);
+                annotation_params(annotation, source_time, self.geometry, dest, transform)
             })
             .collect()
+    }
+
+    /// The signal values every binding reads this frame, resolved once: the pointer, the screen's active zoom, the clock.
+    fn signals(
+        &self,
+        scene: &Scene,
+        source_time: f64,
+        cursor: Option<&CursorPlacement>,
+        focus: bool,
+    ) -> Signals {
+        let zooms: Vec<&ZoomRegion> = if focus {
+            scene.zoom_regions()
+        } else {
+            Vec::new()
+        };
+        let zoom = active_zoom(&zooms, source_time);
+        Signals {
+            time: source_time,
+            cursor: cursor
+                .filter(|c| c.alpha > 0.0)
+                .map_or((0.5, 0.5), |c| (c.x, c.y)),
+            cursor_pressed: cursor.is_some_and(|c| c.pressed),
+            cursor_idle: cursor.is_none_or(|c| c.alpha <= 0.0),
+            zoom_scale: zoom.map_or(1.0, |z| z.scale_at(source_time)),
+            zoom_center: zoom.map_or((0.5, 0.5), |z| (z.center_x, z.center_y)),
+            ..Signals::default()
+        }
+    }
+
+    /// The static value, then the segment animation, then the bindings: the last driver of a property wins.
+    fn bound_opacity(layer: &recast_scene::Layer, rest: f64, t: f64, signals: &Signals) -> f64 {
+        Self::bound(layer, "opacity", rest, t, signals).clamp(0.0, 1.0)
+    }
+
+    fn bound(layer: &recast_scene::Layer, prop: &str, rest: f64, t: f64, signals: &Signals) -> f64 {
+        layer
+            .bindings
+            .iter()
+            .filter(|b| b.prop.split_whitespace().any(|p| p == prop))
+            .fold(rest, |value, b| {
+                b.sample(t, signals, value).unwrap_or(value)
+            })
     }
 
     fn layer_params(
@@ -603,6 +917,7 @@ impl Evaluator {
         source_time: f64,
         output_time: f64,
         focus: bool,
+        signals: &Signals,
     ) -> LayerParams {
         let zooms: Vec<&ZoomRegion> = match focus {
             true => layer
@@ -636,16 +951,34 @@ impl Evaluator {
 
         let anim = self.scene_anim(layer, source_time);
         let (dest, rotate) = self.place(anim);
+        let tilt = layer.transform.bound(&layer.bindings, source_time, signals);
+        let plane = crate::plane::project(
+            dest,
+            rotate,
+            &tilt,
+            self.geometry.canvas_w,
+            self.geometry.canvas_h,
+        );
 
         LayerParams {
             id: layer.id,
             visible: !layer.hidden,
-            opacity: layer.opacity as f32 * anim.opacity as f32,
+            opacity: Self::bound_opacity(layer, layer.opacity * anim.opacity, source_time, signals)
+                as f32,
             transform,
             dest,
             rotate,
             corner_radius: corner_radius_of(layer),
-            blur: blur_of(layer),
+            plane,
+            material: layer.material,
+            blur: Self::bound(
+                layer,
+                "blur",
+                f64::from(blur_of(layer)),
+                source_time,
+                signals,
+            )
+            .clamp(0.0, 1.0) as f32,
             motion_blur,
             zoom_center,
             zoom_velocity: self.zoom_velocity(&zooms, output_time),
@@ -857,6 +1190,7 @@ fn shadow_params(
         half_w: half_w as f32,
         half_h: half_h as f32,
         radius_px: radius_px as f32,
+        warp: params.plane.map(|p| p.warp(params.dest)),
     })
 }
 
@@ -1431,6 +1765,139 @@ mod tests {
         assert_eq!(at(&off), Affine2::IDENTITY);
         // The regions stay authored, so turning the lane back on restores them.
         assert_eq!(off.zoom_regions().len(), 1);
+    }
+
+    /// Step 9's exit shape: a binding declared as data drives a property the evaluator samples, the same code on both targets.
+    #[test]
+    fn an_opacity_wave_binding_on_an_annotation_drives_its_alpha_and_nothing_else_moves() {
+        let json = r#""annotations": [{"id":"a1","start":0.0,"end":9.0,"opacity":1.0,"kind":{"kind":"rect","x":0.2,"y":0.3,"w":0.4,"h":0.2}}],
+            "bindings": [{"layer":"annotation","id":"a1","prop":"opacity","signal":"time","map":"wave","from":0.0,"to":1.0,"period":4.0}],"#;
+        let bound = scene_with(json);
+        let plain = scene_with(&json[..json.find("\"bindings\"").unwrap()]);
+        let at = |scene: &recast_scene::Scene, t: f64| {
+            Evaluator::new(scene, source())
+                .evaluate(scene, t)
+                .annotations
+                .first()
+                .map(|a| a.alpha)
+                .unwrap_or(0.0)
+        };
+        assert!(
+            (at(&bound, 1.0) - 1.0).abs() < 1e-5,
+            "crest at a quarter period"
+        );
+        assert!((at(&bound, 2.0) - 0.5).abs() < 1e-5, "midpoint at the half");
+        assert!(
+            at(&bound, 3.0) < 1e-5,
+            "trough at three quarters, drawn at zero alpha"
+        );
+        assert!(
+            (at(&plain, 3.0) - 1.0).abs() < 1e-5,
+            "without the binding the static opacity stands"
+        );
+        let bound_frame = Evaluator::new(&bound, source()).evaluate(&bound, 3.0);
+        let plain_frame = Evaluator::new(&plain, source()).evaluate(&plain, 3.0);
+        assert_eq!(bound_frame.layers.len(), plain_frame.layers.len());
+        assert_eq!(
+            screen_layer(&bound_frame).dest,
+            screen_layer(&plain_frame).dest,
+            "only the bound property moved"
+        );
+    }
+
+    #[test]
+    fn a_blur_binding_on_the_screen_follows_the_pointer_going_idle() {
+        let json = r#""bindings": [{"layer":"screen","prop":"blur","signal":"cursorIdle","map":"step","from":0.0,"to":0.4}],"#;
+        let scene = scene_with(json);
+        // No cursor track at all reads as idle, so the step lands on `to`.
+        let frame = Evaluator::new(&scene, source()).evaluate(&scene, 1.0);
+        assert!((screen_layer(&frame).blur - 0.4).abs() < 1e-6);
+        let plain = scene_with("");
+        let frame = Evaluator::new(&plain, source()).evaluate(&plain, 1.0);
+        assert_eq!(screen_layer(&frame).blur, 0.0);
+    }
+
+    #[test]
+    fn a_binding_on_the_screen_layer_scales_its_opacity_within_its_window() {
+        let json = r#""bindings": [{"layer":"screen","prop":"opacity","signal":"time","map":"step","from":1.0,"to":0.25,"window":[2.0,5.0]}],"#;
+        let scene = scene_with(json);
+        let opacity =
+            |t: f64| screen_layer(&Evaluator::new(&scene, source()).evaluate(&scene, t)).opacity;
+        assert!(
+            (opacity(1.0) - 1.0).abs() < 1e-6,
+            "before the window the static value stands"
+        );
+        assert!(
+            (opacity(3.0) - 0.25).abs() < 1e-6,
+            "inside the window time past 0.5 s selects `to`"
+        );
+        assert!((opacity(6.0) - 1.0).abs() < 1e-6);
+    }
+
+    /// Every kind that anchors to the video rides the tilt, not just the ones
+    /// the SDF pass happened to draw: an unwarped blur would redact the wrong
+    /// pixels and an unwarped image would float off the card.
+    /// The engine draws the words of every text annotation except the one with
+    /// a caret in it, which the host is drawing live.
+    #[test]
+    fn text_annotations_reach_the_shaper_and_the_edited_one_is_left_to_the_host() {
+        let json = r##""annotations": [
+                {"id":"t1","start":0.0,"end":9.0,"kind":{"kind":"text","x":0.1,"y":0.1,"w":0.5,"h":0.2,
+                  "content":"Ship it","fontFamily":"Inter","fontSize":0.08,"fontWeight":600,
+                  "color":"#ffffff","align":"left","lineHeight":1.2}},
+                {"id":"t2","start":0.0,"end":9.0,"kind":{"kind":"text","x":0.1,"y":0.5,"w":0.5,"h":0.2,
+                  "content":"Second","fontFamily":"Inter","fontSize":0.05,"fontWeight":400,
+                  "color":"#ff0000","align":"center","lineHeight":1.2}}
+            ], "##;
+        let scene = scene_with(json);
+        let mut ev = Evaluator::new(&scene, source());
+
+        let both = ev.evaluate(&scene, 1.0).annotation_text;
+        ev.set_editing(Some("t1".into()));
+        let one = ev.evaluate(&scene, 1.0).annotation_text;
+
+        assert_eq!(both.len(), 2, "both are shaped by default");
+        assert_eq!(both[0].content, "Ship it");
+        assert!(
+            both[0].size_px > both[1].size_px,
+            "sized off the canvas height"
+        );
+        assert_eq!(both[0].align, recast_scene::composition::TextAlign::Start);
+        assert_eq!(
+            one.iter().map(|t| t.content.as_str()).collect::<Vec<_>>(),
+            ["Second"],
+            "the edited one is the host's to draw"
+        );
+        assert!(
+            ev.evaluate(&scene, 1.0).annotations.is_empty(),
+            "and text never reaches the shape pass"
+        );
+    }
+
+    #[test]
+    fn every_video_anchored_annotation_kind_rides_a_tilted_card() {
+        let json = concat!(
+            r#""transforms": [{"layer":"screen","ry":-30.0,"z":0.2}], "#,
+            r#""annotations": [
+                {"id":"r1","start":0.0,"end":9.0,"kind":{"kind":"rect","x":0.2,"y":0.3,"w":0.2,"h":0.2}},
+                {"id":"b1","start":0.0,"end":9.0,"kind":{"kind":"blur","x":0.5,"y":0.3,"w":0.2,"h":0.2}},
+                {"id":"i1","start":0.0,"end":9.0,"kind":{"kind":"image","x":0.1,"y":0.6,"w":0.2,"h":0.2,"path":"a.png"}},
+                {"id":"f1","start":0.0,"end":9.0,"anchor":"frame","kind":{"kind":"rect","x":0.7,"y":0.7,"w":0.2,"h":0.2}}
+            ], "#
+        );
+        let scene = scene_with(json);
+
+        let drawn = Evaluator::new(&scene, source())
+            .evaluate(&scene, 1.0)
+            .annotations;
+
+        assert_eq!(drawn.len(), 4, "every annotation reaches the draw list");
+        let riding: Vec<bool> = drawn.iter().map(|a| a.warp.is_some()).collect();
+        assert_eq!(
+            riding,
+            [true, true, true, false],
+            "the three video-anchored kinds carry the card's warp; the frame-anchored one does not"
+        );
     }
 
     #[test]

@@ -213,6 +213,15 @@ the parity fixtures (`time-map.ts`, `time-map.test.ts`).
   *only transiently while dragging a trim handle*, it un-collapses the trimmed
   head/tail at 1× so the drag isn't degenerate at the clip's left edge. Never feed
   it to playback or export.
+- **Two clocks, and people read the output one.** Annotations, zooms, the
+  playhead and OCR spans are stored in source seconds; the transport and the
+  exported file run on output seconds. Any time printed for a person goes
+  through `store.displaySec(t)` (`originalToOutput(timeMapMemo, t)`), never a raw
+  `.start`/`.end`, which leaves the ruler after the first cut or speed change.
+  `renderMap` is for geometry only.
+- **An item placed at the playhead shows on that frame.** `placedTimeRange`
+  (`place-defaults.ts`) starts it at the playhead's source time, and the
+  evaluator treats both ends as inclusive, so the frame it was placed on draws it.
 - **`buildGapMap` is render-only.** It re-spaces cuts as visible gaps for the
   opt-in "show cut gaps" view. Playback and export never use
   it; with no cuts it's a no-op.
@@ -251,7 +260,7 @@ the parity fixtures (`time-map.ts`, `time-map.test.ts`).
 
 - [preview-engine.md](/architecture/preview-engine), how the preview consumes the time-map for
   playhead/scrub and the shared compositor.
-- `06-export-pipeline.md`, the Rust FFmpeg filtergraph that applies cuts + speed
-  (`cuts_speed.rs`) and the export-side duration cap.
-- `08-state-and-project-format.md`, where cuts, split points, and segment-speed
-  overrides are stored and serialized in the `.recast` edit model.
+- [export-pipeline.md](/architecture/export-pipeline), the Rust FFmpeg filtergraph
+  that applies cuts + speed (`cuts_speed.rs`) and the export-side duration cap.
+- [state-project-format.md](/architecture/state-project-format), where cuts,
+  split points, and segment-speed overrides are stored in `project.rcx`.

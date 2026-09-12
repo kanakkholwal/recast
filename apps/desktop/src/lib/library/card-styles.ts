@@ -10,38 +10,38 @@
 export type LibraryView = "grid" | "list";
 
 export const GRID_CLASS =
-	"grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6";
+	"grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 divide-y divide-x divide-border/60 sm:divide-y-0 sm:divide-x sm:gap-px";
 
 /** Wrapper for the results, laid out per view. */
 export function listClass(view: LibraryView): string {
-	return view === "grid" ? `grid gap-3.5 ${GRID_CLASS}` : "flex flex-col gap-1.5";
+	return view === "grid"
+		? `grid gap-px ${GRID_CLASS}`
+		: "flex flex-col gap-1.5 divide-y divide-border/60";
 }
 
 /** The card container itself. `selected` uses the neutral dark ring language. */
 export function cardShellClass(view: LibraryView, selected: boolean): string {
 	// Border-first and shadow-free at rest (like the web `.surface`) so a dense grid reads calm; hover shifts only the border.
 	return [
-		"group/card relative flex overflow-hidden border outline-none transition-[transform,background-color,border-color] duration-200 ease-out",
+		"group/card relative flex overflow-hidden outline-none transition-[transform,background-color,border-color] duration-200 ease-out",
 		view === "grid"
-			? "flex-col rounded-2xl motion-safe:active:scale-[0.99]"
-			: "flex-row items-center gap-3 rounded-xl p-2 motion-safe:active:scale-[0.995]",
-		selected
-			? "border-foreground/40 bg-card ring-1 ring-inset ring-foreground/20"
-			: "border-border/60 bg-card hover:border-border/90",
+			? "flex-col active:outline active:outline-primary/60 p-2"
+			: "flex-row items-center gap-3 p-2",
+		selected ? "outline ring-1 outline-primary/60" : "",
 	].join(" ");
 }
 
 /** Thumbnail frame: fixed aspect in both views, full width only in the grid. */
 export function thumbFrameClass(view: LibraryView): string {
 	return [
-		"relative shrink-0 overflow-hidden bg-muted/40",
-		view === "grid" ? "aspect-video w-full" : "aspect-video w-24 rounded-lg",
+		"relative shrink-0 overflow-hidden border border-border-low bg-paper rounded-xl",
+		view === "grid" ? "aspect-video w-full" : "aspect-video w-24",
 	].join(" ");
 }
 
 /** The card's click target, laid over everything but the actions menu. */
 export const CARD_OVERLAY_CLASS =
-	"absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60";
+	"absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/60";
 
 /** Selection tick shown in the thumbnail corner while in select mode. */
 export function selectTickClass(selected: boolean): string {

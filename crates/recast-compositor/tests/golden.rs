@@ -106,6 +106,30 @@ fn source_pixels() -> Vec<u8> {
 
 /// Hard-edged checks. A blur is only visible against an edge, and a background
 /// fixture with nothing to blur is the shape of a test that proves nothing.
+/// The stand-in for any bound image: an annotation's, or a composition item's.
+/// Deliberately not square, so a `cover` or `contain` fit is visible as a fit
+/// rather than as a stretch.
+fn item_pixels() -> Vec<u8> {
+    let mut pixels = vec![0u8; (SRC_W * SRC_H * 4) as usize];
+    let border = SRC_H / 8;
+    for y in 0..SRC_H {
+        for x in 0..SRC_W {
+            let offset = ((y * SRC_W + x) * 4) as usize;
+            let edge = x < border || y < border || x + border >= SRC_W || y + border >= SRC_H;
+            let mark = x < SRC_W / 3 && y < SRC_H / 3;
+            let colour = if edge {
+                [250, 120, 30, 255]
+            } else if mark {
+                [20, 20, 20, 255]
+            } else {
+                [30, 90, 250, 255]
+            };
+            pixels[offset..offset + 4].copy_from_slice(&colour);
+        }
+    }
+    pixels
+}
+
 fn background_pixels() -> Vec<u8> {
     let mut pixels = vec![0u8; (SRC_W * SRC_H * 4) as usize];
     for y in 0..SRC_H {
@@ -170,6 +194,10 @@ fn input_pixels(name: &str, generate: fn() -> Vec<u8>) -> Vec<u8> {
 
 fn source_texture(ctx: &GpuContext) -> wgpu::Texture {
     texture_from(ctx, "golden-source", &input_pixels("source", source_pixels))
+}
+
+fn item_texture(ctx: &GpuContext) -> wgpu::Texture {
+    texture_from(ctx, "golden-item", &input_pixels("item", item_pixels))
 }
 
 fn background_texture(ctx: &GpuContext) -> wgpu::Texture {
@@ -253,6 +281,10 @@ fn render(ctx: &GpuContext, scene: &Scene, output_time: f64) -> Frame {
     let background = background_texture(ctx);
     let background_view = background.create_view(&Default::default());
 
+    // Bound under every path a fixture names, so an image fixture never silently renders nothing.
+    let item = item_texture(ctx);
+    let item_view = item.create_view(&Default::default());
+
     let mut inputs = FrameInputs::new();
     inputs.set_background(BackgroundImage {
         view: &background_view,
@@ -272,6 +304,15 @@ fn render(ctx: &GpuContext, scene: &Scene, output_time: f64) -> Frame {
             needs_srgb_decode: true,
         },
     );
+    for path in image_paths(&params) {
+        inputs.set_annotation_image(
+            &path,
+            LayerInput {
+                view: &item_view,
+                needs_srgb_decode: true,
+            },
+        );
+    }
 
     compositor.render(&params, &inputs, &target.create_view(&Default::default()));
     Frame {
@@ -279,6 +320,19 @@ fn render(ctx: &GpuContext, scene: &Scene, output_time: f64) -> Frame {
         width,
         height,
     }
+}
+
+/// Every image this frame wants, so the harness can bind one texture for all of them.
+fn image_paths(params: &recast_compositor::eval::FrameParams) -> Vec<String> {
+    use recast_compositor::annotation::AnnotationShape;
+    params
+        .annotations
+        .iter()
+        .filter_map(|a| match &a.shape {
+            AnnotationShape::Image { path, .. } => Some(path.to_string()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn goldens_dir() -> PathBuf {
@@ -382,6 +436,7 @@ fn every_fixture_matches_its_golden() {
         for (name, generate) in [
             ("source", source_pixels as fn() -> Vec<u8>),
             ("background", background_pixels as fn() -> Vec<u8>),
+            ("item", item_pixels as fn() -> Vec<u8>),
         ] {
             write_png(
                 &dir.join(format!("{name}.png")),

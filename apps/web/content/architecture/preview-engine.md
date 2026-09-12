@@ -35,9 +35,9 @@ something a test has to keep checking after the fact.
 
 The host's job is deliberately small. It hands the engine a scene, a time map
 and whatever assets wasm cannot fetch, then per frame it picks a decoded frame,
-binds it, and asks for an output time. Everything below `setScene` — geometry,
+binds it, and asks for an output time. Everything below `setScene` (geometry,
 zoom, animation, the drop shadow, the cursor, the camera bubble, annotations and
-captions — is evaluated in Rust.
+captions) is evaluated in Rust.
 
 Two things are deliberately decoupled from the `<video>` element:
 
@@ -109,6 +109,7 @@ pass has to know about subsampling.
 | `PreviewEngineDriver` | `lib/playback/engine-driver.ts` | Host-side handle: dedupes scene, cursor, sprite and asset uploads so an unchanged value never crosses into wasm. |
 | `PreviewEngine` | `packages/engine/src/preview-engine.ts` | Typed wrapper over the wasm surface: backend probe, module load, marshalling, lifecycle. No render logic. |
 | `recast-compositor` | `crates/recast-compositor/` | The frame graph, the pure scene-to-uniforms evaluator, and the WGSL passes. Native and wasm. |
+| Component registry | `crates/recast-scene/src/component.rs` | Every vetted recipe: name, version, surface, typed parameters. First-party and in-repo; a document names one, it never carries code. |
 | `recast-ffi-wasm` | `crates/recast-ffi-wasm/` | `wasm-bindgen` surface: frame ring, asset slots, scene JSON in, nothing else. |
 | `PlaybackClock` | `lib/playback/clock.ts` | Wall-clock integrator over gapless output time; the picture master on the MediaBunny path. |
 | `resolveAvSync` | `lib/playback/av-sync.ts` | Pure drift policy: audio is master, re-anchor the picture past 60 ms drift. |
@@ -138,7 +139,7 @@ once on the way out so a mid-playback change is not stranded.
 Note the two axes. The engine takes **output** time, because it evaluates the
 scene and the scene is authored on the output timeline. The host uses
 **original** time only to pick which decoded frame to bind. Binding also carries
-a floor — the end of the most recent cut — so the picture can never step back
+a floor, the end of the most recent cut, so the picture can never step back
 into removed content.
 
 **How export reuses the engine** (`offscreen-export.ts`). Export creates a
@@ -191,6 +192,112 @@ with a sampled expression LUT already at its parser's term budget, so it
 refuses them by name rather than drawing something else. See
 [Export pipeline](/architecture/export-pipeline).
 
+## Components
+
+A `<graphic>` or `<shader>` in the document is an instance of a **component**: a
+name, a pinned `major.minor`, and typed parameters. The registry
+(`recast-scene/src/component.rs`) holds the manifests; the recipes are arms of a
+single `component.wgsl` compiled with everything else, so nothing is compiled at
+render time and an unsupported feature is a build error rather than a black
+frame.
+
+A component may carry words as well as pixels: a title card and a lower third
+draw their panel through the component pass and their text through the caption
+pass, and a counter draws no panel at all. What holds the two halves together
+is that the wipe envelope is computed once, on the CPU, and handed to the
+shader; deriving it in both places is how a panel and its title drift apart.
+
+Resolution is deliberate about versions. Patch and minor both move underneath a
+pin, because a minor only adds parameters and an unset parameter takes its
+declared default. A major difference, or a pin ahead of the registry, does not
+render the recipe: it renders the placeholder, a hatched box in the instance's
+own rect, and `check` says why. An instance never silently disappears.
+
+The manifest's `surface` decides where an instance draws. An overlay recipe
+covers the canvas; a screen recipe takes the screen card's rect, corner radius
+and tilt, so a gloss stays on the card when the card is rotated. Time reaches a
+recipe as progress through the instance's own window, not as timeline seconds.
+
+`<vars>` is the other half. An attribute whose whole value is `$name` resolves
+against the document's declared variables on the way into the engine, and only
+on the way in: the file keeps the reference, so a variable survives every round
+trip and the compositor never sees one.
+
+## Lighting
+
+A layer can carry a small material block: `contact` darkens the parts of a
+tilted card that recede, `rim` lifts its edge. It is not a light model, and
+there is no third term for a specular sweep because that is a component
+(`sweep`), which composes and animates where a fixed lane would not.
+
+Contact is the one term a component cannot provide, since only the card knows
+its own depth. The card shader carries each corner's depth over the card's mean
+as a vertex output, which is 1 on the flat path, so an untilted card is
+untouched by construction. Absent means unlit, which is how every project made
+before this renders.
+
+## Fonts
+
+A session holds a registry of faces, not one face. A key is a CSS family stack
+plus a weight, and the first name is what gets matched, since the resolver takes
+one name rather than a fallback list. Ids are handed out once per key and never
+reused, because the glyph atlas keys on the face id: two families sharing one
+would read each other's glyphs back.
+
+A family that resolves to nothing, or an empty one, falls back to the face the
+host supplied. In the browser nothing resolves at all, so the host's face is the
+only one there is. That is why a composition item or a text component can name a
+font and still draw on a machine that does not have it.
+
+Text annotations are where this gets decided rather than assumed. A webview has
+no font database, so the desktop resolves each face with `resolve_engine_font`,
+the function the native export calls: the installed face first, else the Google
+family, downloaded once. The preview reaches it through `engine_font_bytes`; a
+browser with no such service gets nothing back, and there the DOM draws the text.
+
+Which faces and images to fetch is the compositor's answer, not the host's
+guess. After each scene push `syncEngineAssets` (`VideoPreview.svelte`) reads
+`wantedFaces`, `fallbackFace` and `wantedImages` from the session, the same
+`host_needs` lists the native export reads, and uploads what changed. One list
+per side had drifted twice: composition images and component fonts were in
+neither.
+
+Two rules keep the swap honest. The engine takes the words only when a face
+resolved for EVERY family on screen, because some words in one shaper and the
+rest in another is drift inside a single frame. And the preview only hands them
+over when the export will use the engine too, since the FFmpeg path has no shaper
+and takes text pre-rasterised from the DOM; previewing through a shaper that will
+not write the file is the drift this design exists to prevent. The export stops
+rasterising on the same condition, so the two cannot disagree.
+
+When the engine does draw them, they get their own glyph pass immediately after
+the annotation shapes, so a text annotation keeps its author's z order instead of
+floating above the camera. The one the editor has a caret in is left out, and
+that is session state: nothing about which row is being typed into is saved.
+
+## Compositions
+
+A document either edits a recording or composes a sequence, never both: the
+validator refuses a file with a `<screen>` and a `<sequence>` in it. A
+composition's items sit on the OUTPUT clock, since there is no recording to
+measure against, and reading one sets the timeline's end to the composition's
+own end so every clock downstream keeps working unchanged.
+
+Items draw through passes that already existed. An image item produces the same
+parameters an image annotation does, so the host resolves its source the way it
+already resolves annotation images, and the shape carries a `fit` (cover,
+contain, fill). A text item is shaped by the caption shaper into the caption
+atlas and rides back in the caption frame, so a composition has one font: the
+host's if it set one, else the caption style's.
+
+That reuse has one consequence worth knowing: text draws in the caption pass
+and images in the annotation pass, so a title is always above an image whatever
+the document order says.
+
+A dissolve is not a blend of one item into another. Each item has its own rise
+and fall, capped at half its length so a short item still reaches full, and the
+two simply overlap. Nothing has to know which one is leaving.
+
 ## Invariants & gotchas
 
 - **Picture clock is master, not `<video>`.** On the MediaBunny path the gapless
@@ -215,14 +322,16 @@ refuses them by name rather than drawing something else. See
   the host must hand it the *smoothed* path. The export used to ship the raw
   samples, which put the recorded jitter back into the exported pointer while
   the preview looked fine.
-- **Captions need font BYTES, not a `FontFace`.** The engine shapes with
-  rustybuzz, which cannot read the woff2 the DOM loads. The host resolves a TTF
-  natively and uploads it (`lib/fonts/engine-font.ts`); the font has to land
-  before the track, because the layout measures glyphs.
-- **Text annotations are rasterised before the scene reaches the engine.**
-  Neither the engine nor Rust has a font rasteriser for arbitrary annotation
-  text, so `expandTextAnnotations` substitutes an image annotation at
-  composition resolution. This is the same substitution the native export does.
+- **Text needs font BYTES, not a `FontFace`.** The engine shapes with
+  rustybuzz, which cannot read the woff2 the DOM loads, and `recast-text`
+  bundles no face. The host fetches a TTF through `engine_font_bytes`
+  (`lib/fonts/engine-font.ts`); it has to land before the track, because the
+  layout measures glyphs.
+- **Text annotations are shaped by the engine or rasterised, never a mix.**
+  `engineCanShapeText` hands the words over only when the export will use the
+  engine and every family resolved. Otherwise `expandTextAnnotations`
+  substitutes image annotations at composition resolution, the same
+  substitution the FFmpeg export gets.
 - **Zoom lives in more than one evaluator.** The wasm compositor, the native
   compositor and the Rust export graph must stay in lockstep; the compositor's
   golden frames are what hold them there.

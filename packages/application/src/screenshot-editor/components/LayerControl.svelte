@@ -20,6 +20,7 @@ function layerLabel(o: Overlay): string {
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import { ArrowDown, ArrowUp, Circle, Copy, Droplets, Eye, EyeOff, Image as ImageIcon, Square, Trash2, Type } from "@recast/icons";
+  import { CARD_IDLE, CARD_SELECTED } from "../selection";
   import type { ShapeOverlay, TextOverlay } from "../types";
 
   let { editor }: LayerControlProps = $props();
@@ -45,9 +46,7 @@ function layerLabel(o: Overlay): string {
         <li
           class={cn(
             "group/layer flex items-center gap-1.5 rounded-md border px-1.5 py-1 transition-colors",
-            selected
-              ? "border-foreground/40 bg-card ring-1 ring-inset ring-foreground/20"
-              : "border-border hover:bg-accent",
+            selected ? CARD_SELECTED : CARD_IDLE,
           )}
         >
           <button

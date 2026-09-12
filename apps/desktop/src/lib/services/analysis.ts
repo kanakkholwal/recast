@@ -7,7 +7,7 @@
 
 import { applyAutoZooms } from "@recast/editor/lib/zoom/auto-apply";
 import type { EditorStore } from "@recast/editor/stores/editor-store.svelte";
-import { autosaveProject, suggestZoomRegions } from "$lib/ipc";
+import { suggestZoomRegions } from "$lib/ipc";
 
 export interface AutoZoomOutcome {
 	/** Number of focus regions actually placed. */
@@ -15,23 +15,15 @@ export interface AutoZoomOutcome {
 	reason: "applied" | "empty" | "bad-bounds";
 }
 
-export interface GenerateAutoZoomOptions {
-	/** Persist the result immediately so a crash before the next autosave tick
-	 *  doesn't re-run auto-zoom and double up regions. Omit to skip persistence
-	 *  (e.g. a headless caller managing its own save). */
-	documentPath?: string;
-}
-
 /**
  * Detect focus candidates from a cursor track and place focus regions, under a
- * single coalesced undo entry. Sets the persisted `autoZoomApplied` latch before
- * autosave so a crash can't re-run on reopen. Does NOT toast or guard concurrent
- * runs; those are the caller's concern.
+ * single coalesced undo entry. Latches `autoZoomApplied` before it can fail, so a
+ * crash cannot re-run it and double the regions. Persisting is the caller's job,
+ * as is toasting and guarding concurrent runs.
  */
 export async function generateAutoZoom(
 	store: EditorStore,
 	cursorPath: string,
-	opts: GenerateAutoZoomOptions = {},
 ): Promise<AutoZoomOutcome> {
 	const suggestions = await suggestZoomRegions(cursorPath);
 	const dur = store.metadata?.duration ?? 0;
@@ -49,16 +41,8 @@ export async function generateAutoZoom(
 
 	store.pushUndoState();
 	const result = applyAutoZooms(store, suggestions, bounds, w, h);
-	// Latch BEFORE autosave, so a crash before the next tick can't re-run and double the regions on reopen.
+	// Latch before anything can fail, so a crash cannot re-run this and double the regions on reopen.
 	store.autoZoomApplied = true;
-
-	if (opts.documentPath) {
-		try {
-			await autosaveProject(opts.documentPath, JSON.stringify(store.toRenderState()));
-		} catch (err) {
-			console.warn("Auto-zoom autosave failed:", err);
-		}
-	}
 
 	return {
 		applied: result.applied,

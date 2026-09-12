@@ -30,6 +30,7 @@ const PRESETS: { value: ShadowPreset; label: string; shadow: string }[] = [
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
   import { cn } from "@recast/ui/utils";
+  import { SWATCH_SELECTED } from "../selection";
 
   let { editor }: ShadowPresetControlProps = $props();
 </script>
@@ -40,15 +41,13 @@ const PRESETS: { value: ShadowPreset; label: string; shadow: string }[] = [
       {@const selected = editor.shadowPreset === preset.value}
       <button
         type="button"
-        class="group/shadow flex flex-col items-center gap-1.5 outline-none"
+        class="group/shadow flex flex-col items-center gap-1.5 outline-none transition-transform motion-safe:active:scale-[0.98]"
         onclick={() => editor.setShadowPreset(preset.value)}
       >
         <span
           class={cn(
             "relative block aspect-square w-full overflow-hidden rounded-lg transition-shadow",
-            selected
-              ? "ring-foreground/60 ring-offset-card ring-2 ring-offset-1"
-              : "ring-border ring-1",
+            selected ? SWATCH_SELECTED : "ring-border ring-1",
           )}
           style="background:rgb(210,210,214);"
         >

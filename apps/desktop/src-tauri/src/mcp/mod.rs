@@ -2,7 +2,7 @@
 //! Stateless by design, so a client restart loses nothing and the control socket stays the single writer.
 
 mod protocol;
-mod tools;
+pub(crate) mod tools;
 
 use std::io::{BufRead, Write};
 

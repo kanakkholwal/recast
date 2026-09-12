@@ -90,14 +90,10 @@ export interface EditorDocument {
 	trackOffsets?: TrackOffsetsWire;
 	metadata: VideoMetadata;
 	renderState: EditorRenderState;
-	/** True for a legacy bundle: migrate before loading the editor. */
+	/** On-disk shape the project was opened from; null for a plain video. */
+	format: "v1" | "v2" | "v3" | null;
+	/** True when this is a `.recast` archive and must be converted before it loads. */
 	needsMigration: boolean;
-}
-
-export interface AutosaveState {
-	projectPath: string;
-	savedAtUnixMs: number;
-	editsJson: string;
 }
 
 /** One encoder candidate (H.264 or HEVC) and whether it really initializes
@@ -315,6 +311,8 @@ export interface EnqueueExportRequest {
 	/** The editor's resolved kept-timeline. The backend replays it instead of
 	 *  re-deriving one from cuts + splits + speed anchors. */
 	timeMap?: ExportTimeSpan[] | null;
+	/** Render through the engine instead of the FFmpeg graph; `RECAST_ENGINE_EXPORT` overrides it. */
+	engineExport?: boolean;
 }
 
 /** A queue row as the backend reports it (source of truth for the activity UI). */

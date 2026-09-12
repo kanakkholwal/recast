@@ -18,7 +18,9 @@ export interface ExportControlProps {
   import { SliderRow } from "@recast/ui/slider-row";
   import { Segmented } from "@recast/ui/segmented";
   import { Button } from "@recast/ui/button";
+  import { cn } from "@recast/ui/utils";
   import { Copy, Download as DownloadIcon, Film, ImagePlus, Loader2, Package, X } from "@recast/icons";
+  import { SWATCH_SELECTED } from "../selection";
   import {
     canCopyImage,
     copyToClipboard,
@@ -266,7 +268,10 @@ export interface ExportControlProps {
         <div class="relative">
           <button
             type="button"
-            class="border-border aspect-video w-full overflow-hidden rounded-md border transition-transform hover:scale-105 {editor.activeSlide === i ? 'ring-foreground/60 ring-2 ring-offset-1' : ''}"
+            class={cn(
+              "border-border aspect-video w-full overflow-hidden rounded-md border transition-transform hover:scale-105",
+              editor.activeSlide === i && SWATCH_SELECTED,
+            )}
             aria-label={`Slide ${i + 1}`}
             aria-pressed={editor.activeSlide === i}
             onclick={() => editor.setActiveSlide(i)}

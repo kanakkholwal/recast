@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::ipc::Channel;
 
 use chrono::{Local, TimeZone};
@@ -9,7 +9,7 @@ use super::error::{AppError, AppResult};
 use super::system::get_active_output_dir;
 use super::types::{AppState, RecordingEntry, RecordingStartResult};
 use crate::capture::{CaptureTarget, RegionRect};
-use crate::project::writer::{write_project, ProjectWriteRequest};
+use crate::project::v3::ProjectWriteRequest;
 use crate::project::{ProjectMediaMetadata, ProjectMetadata, ProjectVideoMetadata};
 use crate::recording::{CameraPreviewUpdate, RecordingOptions};
 use crate::render::graph::RenderState;
@@ -155,7 +155,7 @@ pub async fn stop_recording(
                 camera_overlay: artifacts.camera_overlay.clone(),
                 ..RenderState::default()
             };
-            let project_path = write_project(ProjectWriteRequest {
+            let request = ProjectWriteRequest {
                 output_path: final_path.clone(),
                 metadata,
                 recording_path: artifacts.recording_path.clone(),
@@ -165,8 +165,9 @@ pub async fn stop_recording(
                 camera_path: artifacts.camera_path.clone(),
                 edits_json: serde_json::to_string_pretty(&default_render_state)
                     .unwrap_or_else(|_| "{}".into()),
-            })
-            .inspect_err(|e| log::error!("write_project failed: {e:#}"))?;
+            };
+            let project_path = crate::project::v3::write_project(request)
+                .inspect_err(|e| log::error!("write_project failed: {e:#}"))?;
 
             // Clean up temporary session files.
             let _ = fs::remove_file(&artifacts.recording_path);
@@ -257,6 +258,47 @@ pub async fn stop_camera_preview(session: u64) -> AppResult<()> {
         .map_err(|e| AppError::msg(format!("stop_camera_preview join error: {e}")))
 }
 
+/// Copies a `.recast` archive into the recordings folder and converts it to a project directory there.
+/// Returns the project's path. The file the user picked is left alone.
+#[tauri::command]
+pub async fn import_project_archive(
+    state: State<'_, AppState>,
+    archive_path: String,
+) -> AppResult<String> {
+    let dir = recasts_dir(&state);
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = PathBuf::from(&archive_path);
+        let stem = source
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| AppError::msg("that file has no name"))?;
+        fs::create_dir_all(&dir).map_err(|e| AppError::msg(format!("{e}")))?;
+        let dest = free_path(&dir, stem);
+        fs::copy(&source, &dest).map_err(|e| AppError::msg(format!("copying the archive: {e}")))?;
+        if let Err(e) = crate::project::v3::import_archive(&dest) {
+            let _ = fs::remove_file(&dest);
+            return Err(AppError::msg(format!("{e:#}")));
+        }
+        // The conversion keeps the copy as `.bak`; the user still has the original they picked.
+        let _ = fs::remove_file(dest.with_extension("recast.bak"));
+        Ok(dest.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("import task panicked: {e}")))?
+}
+
+/// `Name.recast`, or `Name (2).recast` and up, so an import never lands on a project already there.
+fn free_path(dir: &Path, stem: &str) -> PathBuf {
+    let first = dir.join(format!("{stem}.recast"));
+    if !first.exists() {
+        return first;
+    }
+    (2..)
+        .map(|n| dir.join(format!("{stem} ({n}).recast")))
+        .find(|p| !p.exists())
+        .unwrap_or(first)
+}
+
 // Async plus spawn_blocking: the scan stats every file, hundreds of ms on a big library, and a sync command runs on the UI thread.
 #[tauri::command]
 pub async fn list_recasts(state: State<'_, AppState>) -> AppResult<Vec<RecordingEntry>> {
@@ -287,8 +329,8 @@ pub async fn caption_sidecar_vtt(media_path: String) -> AppResult<Option<String>
     .map_err(|e| AppError::msg(format!("caption_sidecar_vtt join error: {e}")))
 }
 
-/// One pass over `dir`, collecting any file whose extension is in `exts`.
-/// Sorts newest-first by mtime.
+/// One pass over `dir`, collecting any file whose extension is in `exts`, newest-first by mtime.
+/// With `to_v3`, every bundle counts as needing migration, not only v1.
 fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEntry>> {
     let mut entries = Vec::new();
     let read = match fs::read_dir(dir) {
@@ -319,12 +361,17 @@ fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEnt
                 .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(modified);
-            // Only `.recast` carries a format, and the probe reads just the zip central directory.
-            let needs_migration = file_ext == "recast" && crate::project::is_legacy_project(&path);
+            // A project directory carries the same extension, so a `.recast` that is still a file is an archive waiting to be converted.
+            let needs_migration = file_ext == "recast" && meta.is_file();
+            let size_bytes = if meta.is_dir() {
+                crate::project::v3::size_bytes(&path)
+            } else {
+                meta.len()
+            };
             entries.push(RecordingEntry {
                 filename: entry.file_name().to_string_lossy().to_string(),
                 path: path.to_string_lossy().to_string(),
-                size_bytes: meta.len(),
+                size_bytes,
                 created,
                 modified,
                 needs_migration,
@@ -338,6 +385,25 @@ fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEnt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Importing twice must not silently replace the first one: the copy is the project.
+    #[test]
+    fn a_second_import_of_the_same_name_lands_beside_the_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+
+        let first = free_path(dir, "Take");
+        assert_eq!(first.file_name().unwrap(), "Take.recast");
+        fs::create_dir_all(&first).unwrap();
+        let second = free_path(dir, "Take");
+        fs::create_dir_all(&second).unwrap();
+
+        assert_eq!(second.file_name().unwrap(), "Take (2).recast");
+        assert_eq!(
+            free_path(dir, "Take").file_name().unwrap(),
+            "Take (3).recast"
+        );
+    }
 
     /// Regression guard: `start_recording` and `stop_recording` MUST stay `async` so their blocking bodies run off Tauri's main thread.
     /// macOS renders the WebView there, so a sync version froze the window; the closures below only type-check, and a plain `fn` stops compiling here.

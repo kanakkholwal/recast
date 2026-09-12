@@ -28,6 +28,58 @@ export const KIND_META: Record<ChangeKind, { label: string; icon: IconComponent;
 // RELEASES:START, auto-generated, do not edit by hand
 export const RELEASES: readonly ChangelogRelease[] = [
 	{
+		version: '0.4.7',
+		date: '2026-09-12',
+		highlights: [
+			'Projects are saved as folders, with the edit list in a readable `project.rcx` you can diff, keep in git or edit by hand.',
+			'Agents connected over MCP can check a project, read its transcript and frames, remove silences and add zooms, then propose the result for you to review.',
+			'Titles, lower thirds, 3D tilt and lighting reach the exported file, drawn by the same engine as the preview.',
+		],
+		changes: [
+			{ kind: 'added', summary: 'A project is a folder named like `Demo.recast`, holding the recording, its tracks and a `project.rcx` edit list. Edit `project.rcx` in a text editor while the project is open and the change appears in the editor; a file that does not parse is reported with its line and column.' },
+			{ kind: 'added', summary: 'Import a `.recast` file from the Recordings page, and export any project as a single `.recast` file to send to someone.' },
+			{ kind: 'added', summary: 'Type into a text annotation directly on the preview.' },
+			{ kind: 'added', summary: 'Graphics components such as title cards, lower thirds, spotlights and counters, each with its own settings.' },
+			{ kind: 'added', summary: 'Variables: declare a colour, font or piece of text once and use it anywhere in the project. The inspector\'s Variables tab edits them.' },
+			{ kind: 'added', summary: '3D tilt for the screen and the camera, with an optional contact shadow and rim light.' },
+			{ kind: 'added', summary: 'Bindings: a property can follow the pointer, a click, the zoom or the word being spoken.' },
+			{ kind: 'added', summary: 'Compositions: a project can be a sequence of images and text with transitions and no recording at all. Each text item can use its own font.' },
+			{ kind: 'added', summary: 'Components, 3D tilt, bindings and compositions are written in `project.rcx`, by hand or by an agent. The editor previews and exports them but has no controls for them yet.' },
+			{ kind: 'added', summary: 'New agent tools: `recast_check` flags problems such as a zoom that is never visible, `recast_transcript`, `recast_silences` and `recast_frames` read the recording, and `recast_remove_silences` and `recast_add_zoom` make the common edits. `recast skills install` writes the editing instructions an agent loads.' },
+			{ kind: 'added', summary: 'Settings, "Let agents edit the open project live" lets an agent\'s edits land in the open editor as one undo step instead of waiting on a branch for review.' },
+			{ kind: 'changed', summary: 'New recordings are saved as folders instead of single `.recast` files. Opening an older `.recast` file converts it to a folder and keeps the original as a backup.' },
+			{ kind: 'changed', summary: 'Edits are committed to a journal inside the project, so an interrupted session is replayed the next time it opens. The separate recovery copy is gone.' },
+			{ kind: 'changed', summary: 'Projects that use camera layouts, pointer dodging, graphics components, 3D tilt, lighting, bindings or compositions always export through the engine, whether or not "Export in the background" is on. The legacy exporter cannot draw them.' },
+			{ kind: 'changed', summary: 'Text the engine draws uses the installed font or downloads the Google font of the same name, so it matches the preview. An export whose font cannot be found anywhere stops and names the font instead of leaving the text blank.' },
+			{ kind: 'fixed', summary: '"Export in the background" had no effect on exports started from the editor, which always used the legacy exporter.' },
+			{ kind: 'fixed', summary: 'An annotation or zoom did not show on the frame where you placed it until the playhead moved forward a little.' },
+			{ kind: 'fixed', summary: 'Times in the annotation and zoom panels did not match the playhead once a project had cuts or speed changes.' },
+			{ kind: 'fixed', summary: 'A text annotation that could not be drawn was left out of the export without a word. You now get a warning.' },
+		],
+	},
+	{
+		version: '0.4.6',
+		date: '2026-09-07',
+		highlights: [
+			'Recording, audio and camera capture now run on one engine that works the same on Windows, macOS and Linux.',
+			'The camera can take half the frame or all of it, and change layout from one clip to the next.',
+			'Take a screenshot of any region, then crop, annotate and copy it without leaving Recast.',
+		],
+		changes: [
+			{ kind: 'added', summary: 'Per-clip camera layouts. A clip can put the camera side by side with the screen, stack the two, hide the camera, or give it the whole frame, and the picture slides between arrangements when the layout changes. Each clip on the camera row carries its own, so a tutorial can switch framing partway through. Exporting a layout needs "Export in the background" turned on in Settings, Experimental.' },
+			{ kind: 'added', summary: 'The camera can dodge the pointer, moving aside when you point at something underneath it and easing back when you move away. Also needs "Export in the background" to reach an exported file.' },
+			{ kind: 'added', summary: 'Capture a single window instead of a whole display, and keep it framed when it moves or resizes.' },
+			{ kind: 'added', summary: 'Screenshots: press Alt+Shift+S, drag a region, and open it in an editor for cropping, annotating and copying.' },
+			{ kind: 'added', summary: 'Cameras are recorded on their own track, so the overlay can be repositioned, resized and re-framed after the take instead of being burned in.' },
+			{ kind: 'added', summary: 'Settings has a Diagnostics tab reporting what the machine supports, so a capture problem can be read off rather than guessed.' },
+			{ kind: 'changed', summary: 'The preview and the export are drawn by one GPU engine rather than two renderers, so what you scrub is what you get. FFmpeg is now used to mux the audio back in rather than to composite the picture.' },
+			{ kind: 'changed', summary: 'Exports are composited by the preview\'s own engine by default, so the file matches what you scrubbed. Settings, Advanced has "Use the legacy exporter" if an export comes out wrong on your machine, and the app falls back to the old exporter on its own where the engine cannot run.' },
+			{ kind: 'changed', summary: '"Export in the background" (alpha) runs that engine natively, with no resolution ceiling and no preview window needed. It stays off by default. Camera layouts and pointer dodging are refused by the legacy exporter with a message naming the feature rather than exporting a file that is not what you previewed.' },
+			{ kind: 'changed', summary: 'Self-hosting is no longer experimental. The server address moved to Settings, Cloud, where it is a supported option rather than a flag.' },
+			{ kind: 'fixed', summary: 'Silence detection failed to start, reporting a model error, on every machine. Its voice-activity model now ships inside the app instead of being downloaded, so it also works with no network and cannot be changed underneath you.' },
+		],
+	},
+	{
 		version: '0.4.5',
 		date: '2026-08-01',
 		highlights: [

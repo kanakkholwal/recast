@@ -21,6 +21,7 @@ export const PANEL_TABS = [
 	"audio",
 	"music",
 	"captions",
+	"variables",
 	"extensions",
 	"info",
 	"dev",
@@ -46,4 +47,5 @@ export const WEB_PANEL_TABS = [
 	"cursor",
 	"camera",
 	"captions",
+	"variables",
 ] as const satisfies readonly PanelTab[];

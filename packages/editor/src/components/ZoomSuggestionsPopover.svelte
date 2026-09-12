@@ -231,7 +231,7 @@ function dismissAll() {
                   {reasonLabel(sug.reason)}
                 </span>
                 <span class="font-mono text-[10px] tabular-nums text-muted-foreground">
-                  {clockCentis(sug.timestampUs / 1_000_000)}
+                  {clockCentis(store.displaySec(sug.timestampUs / 1_000_000))}
                 </span>
               </div>
               <div class="truncate text-[10px] text-muted-foreground">

@@ -2,6 +2,7 @@
 import { formatSize } from "@recast/editor/lib/format/files";
 import { Check, Film, type IconComponent, Play } from "@recast/icons";
 import type { Snippet } from "svelte";
+import { Image } from "@unpic/svelte";
 import type { RecordingEntry } from "$lib/ipc";
 import {
 	CARD_OVERLAY_CLASS,
@@ -49,7 +50,7 @@ const dateLabel = $derived(libraryDate(entry.created));
 
 <div class={thumbFrameClass(view)}>
   {#if thumbnail}
-    <img src={thumbnail} alt="" draggable="false" class="size-full object-cover" />
+    <Image src={thumbnail} alt="" draggable="false" class="size-full object-cover" />
   {:else}
     <div class="grid size-full place-items-center text-muted-foreground/50">
       <Placeholder class={view === "grid" ? "size-6" : "size-4"} />

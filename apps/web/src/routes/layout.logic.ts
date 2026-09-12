@@ -24,8 +24,6 @@ export function isChromeless(pathname: string): boolean {
 		pathname.startsWith("/share/") ||
 		// The screenshot editor is a full-height app with its own top bar; its landing page keeps the site chrome.
 		pathname.startsWith("/tools/screenshot-editor/edit") ||
-		// The playground is one page whose drop surface swaps in-place for the editor, so it owns its whole shell.
-		pathname.startsWith("/playground") ||
 		pathname === "/accept-invitation" ||
 		pathname === "/verify-email" ||
 		CHROMELESS_PATHS.has(pathname)
@@ -43,7 +41,6 @@ export function isMarketing(pathname: string): boolean {
 		pathname.startsWith("/admin") ||
 		pathname.startsWith("/onboarding") ||
 		pathname.startsWith("/share/") ||
-		pathname.startsWith("/playground") ||
 		pathname.startsWith("/tools/screenshot-editor/edit")
 	);
 }
@@ -56,6 +53,7 @@ export function isAppArea(pathname: string): boolean {
 // Only public marketing and tool pages are indexed; everything else is marked noindex.
 const PUBLIC_PREFIXES = [
 	"/features",
+	"/agent",
 	"/extensions",
 	"/pricing",
 	"/download",
@@ -72,9 +70,7 @@ export function isIndexable(pathname: string): boolean {
 	// A real route, but an empty editor is thin content, and `/tools` below would otherwise mark it indexable.
 	if (pathname.startsWith("/tools/screenshot-editor/edit")) return false;
 	return (
-		pathname === "/" ||
-		pathname === "/playground" ||
-		PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+		pathname === "/" || PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
 	);
 }
 

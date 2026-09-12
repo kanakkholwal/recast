@@ -257,7 +257,7 @@ function onCardClick(event: MouseEvent) {
         ? 'justify-center'
         : ''}"
       id={`annotation-region-${annotation.id}`}
-      aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(outSec(annotation.start), timeMode, fps)} to ${formatTimeByMode(outSec(annotation.end), timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
+      aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(store.displaySec(annotation.start), timeMode, fps)} to ${formatTimeByMode(store.displaySec(annotation.end), timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
     >
       {#if width < NAME_WIDTH_PX}
         <!-- Too narrow for a label; the glyph sits back so a short annotation

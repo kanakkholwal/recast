@@ -39,8 +39,16 @@ pub struct Scene {
     /// the same reason as the pointer path: captured signal, not authored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub caption_track: Option<CaptionTrack>,
+    /// An authored sequence rather than an edited recording. The two are not
+    /// mixed: a document has a screen or a composition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composition: Option<crate::composition::Composition>,
     #[serde(default)]
     pub flags: SceneFlags,
+    /// Declared variables. Every reference is already resolved, so the engine
+    /// never reads these; carried for the same reason as `passthrough`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vars: Vec<crate::vars::VarSpec>,
     /// Editor-owned keys the engine never reads. Carried so a round trip
     /// through the engine cannot reset a user's settings.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
@@ -58,6 +66,8 @@ impl Default for Scene {
             cursor_track: None,
             captions: None,
             caption_track: None,
+            composition: None,
+            vars: Vec::new(),
             flags: SceneFlags::default(),
             passthrough: serde_json::Map::new(),
         }
@@ -179,6 +189,18 @@ pub struct Layer {
     pub hidden: bool,
     #[serde(default = "unit")]
     pub opacity: f64,
+    /// Properties driven by signals; sampled by the evaluator after the static value and the segment animation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bindings: Vec<crate::bind::Binding>,
+    /// The camera's placement rules, in evaluation order; empty on every other layer.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub placement: Vec<crate::bind::PlacementRule>,
+    /// The layer's 3D transform; identity draws through the flat path unchanged.
+    #[serde(default, skip_serializing_if = "crate::bind::Transform3::is_identity")]
+    pub transform: crate::bind::Transform3,
+    /// How the layer catches light. All zero is no shading, which is every project made before it.
+    #[serde(default, skip_serializing_if = "crate::material::Material::is_none")]
+    pub material: crate::material::Material,
 }
 
 fn unit() -> f64 {
@@ -194,6 +216,10 @@ impl Layer {
             blend: BlendMode::Normal,
             hidden: false,
             opacity: 1.0,
+            bindings: Vec::new(),
+            placement: Vec::new(),
+            transform: crate::bind::Transform3::IDENTITY,
+            material: crate::material::Material::NONE,
         }
     }
 
@@ -222,6 +248,9 @@ pub enum LayerSource {
         kind: String,
         value: String,
     },
+    /// A component instance. Its manifest says whether it draws over the whole
+    /// canvas or attached to the screen card, so both spellings are one layer.
+    Graphic(Box<crate::component::GraphicSpec>),
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

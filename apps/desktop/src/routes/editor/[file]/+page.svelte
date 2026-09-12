@@ -1,5 +1,11 @@
 <script lang="ts">
-import { agentSession, Editor, resolveTrackOffsets } from "@recast/editor";
+import {
+	agentSession,
+	DocumentSession,
+	Editor,
+	loadProjectDocumentParser,
+	resolveTrackOffsets,
+} from "@recast/editor";
 import AgentSessionBadge from "@recast/editor/components/AgentSessionBadge.svelte";
 import BranchReviewPanel from "@recast/editor/components/BranchReviewPanel.svelte";
 import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
@@ -72,7 +78,6 @@ import {
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { Spinner } from "@recast/ui/spinner";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { platform } from "@tauri-apps/plugin-os";
 import { onDestroy, onMount, tick, untrack } from "svelte";
 import { fade } from "svelte/transition";
@@ -90,8 +95,6 @@ import { acquireEditorWrite, releaseEditorWrite } from "$lib/editor/agent-sessio
 import { tauriEditorServices } from "$lib/editor/services.tauri";
 import type { RecordingEntry } from "$lib/ipc";
 import {
-	autosaveProject,
-	clearAutosave,
 	createExportId,
 	detectSilence,
 	extractWaveform,
@@ -100,9 +103,10 @@ import {
 	listExports,
 	loadEditorDocument,
 	migrateProject,
-	openFileLocation,
 	saveProjectEdits,
+	openFileLocation,
 } from "$lib/ipc";
+import { fileUrl } from "$lib/assetUrl";
 import { log } from "$lib/logger";
 import { generateAutoZoom } from "$lib/services/analysis";
 import { isShareSupported, shareRecording } from "$lib/share";
@@ -213,6 +217,10 @@ let cameraCapture = $state<CameraCapture>("legacy");
 let trackOffsets = $state(resolveTrackOffsets(undefined));
 let cameraSrc = $state("");
 let documentPath = $state("");
+// A plain video has nowhere to save edits into. Plain `let`: only the save handlers read it.
+let isProject = false;
+// v3 projects only: the replica that mirrors edits to the core as op batches. Null for a bundle or a plain video.
+let docSession: DocumentSession | null = null;
 let isLoading = $state(true);
 let error = $state("");
 let loadedPath = $state("");
@@ -246,11 +254,11 @@ $effect(() => {
 	}
 });
 
-// A v1 `.recast` must migrate first; migrationDone separates a confirmed update (reload) from a dismissal (leave).
+// A `.recast` archive must be converted first; migrationDone separates a confirmed conversion (reload) from a dismissal (leave).
 let showMigration = $state(false);
 let migrationDone = false;
 
-// Autosave: save edit state every 30 seconds while editing.
+// Autosave: commit the document every 30 seconds while editing.
 const AUTOSAVE_INTERVAL_MS = 30_000;
 let autosaveTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -264,9 +272,10 @@ function startAutosave() {
 		if (!documentPath || isLoading) return;
 		// Most idle ticks are clean, so skip the full serialize until there is real work to persist.
 		if (!store.isDirty) return;
+		// A plain video opened without a project has nowhere to autosave to.
+		if (!isProject) return;
 		try {
-			const editsJson = JSON.stringify(store.toRenderState());
-			await autosaveProject(documentPath, editsJson);
+			await commitProject();
 			if (autosaveFailing) {
 				autosaveFailing = false;
 				toast.dismiss(AUTOSAVE_TOAST_ID);
@@ -295,10 +304,63 @@ function stopAutosave() {
 // The GUI is a first-class lock holder, so an agent patching this open project is refused, not raced.
 const editorWriterId = `ui:${crypto.randomUUID().slice(0, 8)}`;
 
+/** One line for the overlap toast: the attributes both sides wrote, or the count when there are many. */
+function describeOverlap(ops: { op: string; attr?: string }[]): string {
+	const attrs = [...new Set(ops.map((o) => o.attr ?? o.op))];
+	return attrs.length <= 3 ? attrs.join(", ") : `${attrs.length} properties`;
+}
+
+/** Swap the document session for the project just loaded; a non-v3 path closes any open one. */
+async function openDocumentSession(projectPath: string | null) {
+	const previous = docSession;
+	docSession = null;
+	await previous?.dispose();
+	if (!projectPath) return;
+	try {
+		docSession = await DocumentSession.open({
+			store,
+			projectPath,
+			parse: await loadProjectDocumentParser(),
+			onConflict: () =>
+				toast.warning("Another editor changed this project", {
+					description:
+						"Your last edit could not be applied on top of it, so its version was loaded.",
+				}),
+			onOverlap: (ops) =>
+				toast.info("You and another writer changed the same thing", {
+					description: `${describeOverlap(ops)} kept your value.`,
+				}),
+			onInvalid: (event) =>
+				toast.error("project.rcx on disk could not be loaded", {
+					description: event.message,
+					duration: 15_000,
+				}),
+			onError: (context, err) =>
+				log.warn("document", `replica ${context} failed`, { err: String(err) }),
+		});
+	} catch (err) {
+		// `saveProject` falls back to a whole-state save, so the editor stays usable without a replica.
+		log.warn("document", "replica unavailable", { err: String(err) });
+	}
+}
+
+// Mirror off the render path: reading only `isDirty` keeps this effect from depending on every field.
+$effect(() => {
+	if (store.isDirty) docSession?.scheduleCommit();
+});
+
+// The file is exactly current the moment the window loses focus.
+onMount(() => {
+	const onBlur = () => void docSession?.flush().catch(() => undefined);
+	window.addEventListener("blur", onBlur);
+	return () => window.removeEventListener("blur", onBlur);
+});
+
 /** Re-read the saved edits after a branch lands, so the editor shows what was
  *  actually written rather than the pre-apply state. */
 async function reloadRenderStateFromDisk() {
-	if (!documentPath) return;
+	// A v3 project announced the batch already; the session adopted it through the replica.
+	if (!documentPath || docSession) return;
 	try {
 		const document = await loadEditorDocument(documentPath);
 		store.loadRenderState(document.renderState);
@@ -355,11 +417,8 @@ onMount(() => {
 
 onDestroy(() => {
 	stopAutosave();
+	void openDocumentSession(null);
 	log.clearRecast();
-	// Clear autosave on clean exit.
-	if (documentPath) {
-		clearAutosave(documentPath).catch(() => undefined);
-	}
 	// Keep a live export tracked in the activity center after navigation; only drop the foreground flag.
 	exportActivity.minimize();
 });
@@ -589,7 +648,7 @@ $effect(() => {
 // Resolve the store's music clips to playable specs (asset URLs).
 function buildMusicSpecs(): MusicClipSpec[] {
 	return store.musicClips.map((c) => ({
-		url: convertFileSrc(clipAssetPath(c.source)),
+		url: fileUrl(clipAssetPath(c.source)),
 		startOutputSec: c.startOutputSec,
 		offsetSec: c.offsetSec,
 		durationSec: c.durationSec,
@@ -786,7 +845,7 @@ async function loadDocument() {
 	try {
 		const document = await loadEditorDocument(data.filePath);
 		if (document.needsMigration) {
-			// Stop before loading anything, and prompt to update the format first.
+			// Stop before loading anything, and prompt to convert the archive first.
 			isLoading = false;
 			showMigration = true;
 			return;
@@ -795,6 +854,8 @@ async function loadDocument() {
 		store.videoPath = document.projectPath;
 		store.metadata = document.metadata;
 		store.loadRenderState(document.renderState);
+		isProject = document.format !== null;
+		await openDocumentSession(document.format === "v3" ? document.projectPath : null);
 		// Scope every subsequent log in this window to the opened recast.
 		log.setRecast(documentPath, {
 			width: document.metadata.width,
@@ -803,7 +864,7 @@ async function loadDocument() {
 			fps: document.metadata.fps,
 			codec: document.metadata.codec,
 		});
-		videoSrc = convertFileSrc(document.mediaPath);
+		videoSrc = fileUrl(document.mediaPath);
 		cursorPath = document.cursorPath ?? null;
 		store.cursorPath = cursorPath;
 		// Raw on-disk media paths for Rust-side analysis (silence detection).
@@ -825,13 +886,13 @@ async function loadDocument() {
 		store.waveform = [];
 		// Lazy: the idle effect below extracts the waveform, so the ffmpeg pass never competes with load.
 		waveformRequested = false;
-		systemAudioSrc = document.audioPath ? convertFileSrc(document.audioPath) : "";
-		micAudioSrc = document.microphonePath ? convertFileSrc(document.microphonePath) : "";
+		systemAudioSrc = document.audioPath ? fileUrl(document.audioPath) : "";
+		micAudioSrc = document.microphonePath ? fileUrl(document.microphonePath) : "";
 		trackOffsets = resolveTrackOffsets(document.trackOffsets);
 		cameraPath = document.cameraPath ?? null;
 		// Absent from an older backend: unknowable, so `legacy` — never "off".
 		cameraCapture = document.cameraCapture ?? "legacy";
-		cameraSrc = cameraPath ? convertFileSrc(cameraPath) : "";
+		cameraSrc = cameraPath ? fileUrl(cameraPath) : "";
 		// A recorded camera is composited only when enabled; a fresh recording never sets that flag, so turn it on when one exists and the project hasn't already decided.
 		if (cameraPath && document.renderState?.cameraOverlay?.enabled === undefined) {
 			store.updateCameraOverlay({ enabled: true });
@@ -898,9 +959,7 @@ async function runAutoZoom(opts: { silentEmpty?: boolean; undoOnError?: boolean 
 	autoZoomRunning = true;
 	try {
 		// generateAutoZoom latches store.autoZoomApplied itself on non-error paths.
-		const outcome = await generateAutoZoom(store, cursorPath, {
-			documentPath,
-		});
+		const outcome = await generateAutoZoom(store, cursorPath);
 		if (outcome.reason === "bad-bounds") return;
 		if (outcome.applied > 0) {
 			toast.success(`Added ${outcome.applied} focus moment${outcome.applied === 1 ? "" : "s"}`, {
@@ -1019,6 +1078,17 @@ const exportResult = $derived<ExportResult | null>(
 				: null,
 );
 
+// Text that would not rasterise is dropped rather than failing the whole export, which in a desktop app is invisible without this.
+function warnTextDropped(contents: string[]) {
+	const preview = contents
+		.map((t) => t.trim().split(/\r?\n/)[0])
+		.filter(Boolean)
+		.join(", ");
+	toast.warning(
+		`${contents.length} text annotation${contents.length > 1 ? "s" : ""} couldn't be rendered and won't appear in the export${preview ? `: ${preview}` : ""}`,
+	);
+}
+
 async function handleExport() {
 	if (isExportingHere) return;
 	const exportId = createExportId();
@@ -1047,6 +1117,8 @@ async function handleExport() {
 		// The browser engine composites text and cursor itself in buildExportJob, so skip that raster here.
 		const { renderState: finalRenderState, metadata: meta } = await buildExportRenderState(store, {
 			skipVisualRaster: engine.engine === "browser",
+			engineExport: experimentalStore.isEnabled("engineExport"),
+			hooks: { onTextDropped: warnTextDropped },
 		});
 
 		// Warn but don't block: the export otherwise drops unloadable image annotations silently.
@@ -1124,6 +1196,7 @@ async function handleExport() {
 				cameraOffsetMs: trackOffsets.cameraMs,
 				quality: store.exportQuality as ExportQuality,
 				fps: renderFps,
+				onTextDropped: warnTextDropped,
 			});
 			exportActivity.enqueueBrowserExport({
 				id: exportId,
@@ -1455,15 +1528,38 @@ function getExportRangeLabel() {
 
 let isSaving = $state(false);
 
+/** Persist without touching the dirty flag, for the timer. Falls back to a
+ *  whole-state write: a replica that failed to open must not make a real project
+ *  unsaveable, which is what deleting the old autosave shadow nearly caused. */
+async function commitProject(): Promise<number> {
+	if (docSession) {
+		await docSession.commit();
+		return Date.now();
+	}
+	return saveProjectEdits(documentPath, JSON.stringify(store.toRenderState()));
+}
+
+/** The Save button: commit, flush to disk, and move the revert baseline. */
+async function saveProject() {
+	if (docSession) {
+		await docSession.save();
+		store.markSaved(Date.now());
+		return;
+	}
+	store.markSaved(await commitProject());
+}
+
 async function handleSave() {
 	if (!documentPath || isSaving || isLoading) return;
 	isSaving = true;
 	// Serialize stays on the main thread: Tauri JSON-encodes command args there anyway, so a worker only adds a clone.
 	await tick();
 	try {
-		const editsJson = JSON.stringify(store.toRenderState());
-		const savedAt = await saveProjectEdits(documentPath, editsJson);
-		store.markSaved(savedAt);
+		if (!isProject) {
+			toast.warning("This is a video file, not a project, so there's nothing to save edits into.");
+			return;
+		}
+		await saveProject();
 		toast.success("Saved");
 	} catch (err) {
 		const message =
@@ -1684,9 +1780,9 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
 
   <ConfirmDialog
     bind:open={showMigration}
-    title="Update project format"
-    description="This project was made with an older version of Recast. Update it to the current format to keep editing. A backup (.bak) is saved next to it first."
-    confirmLabel="Update project"
+    title="Convert to a project folder"
+    description="This is a .recast archive. Projects are folders, so it has to be converted before you can edit it. The archive is kept as a .bak next to it."
+    confirmLabel="Convert"
     cancelLabel="Not now"
     onConfirm={confirmMigration}
     onOpenChange={onMigrationOpenChange}

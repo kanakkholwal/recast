@@ -133,6 +133,8 @@ jobs:
         env:
           NODE_ENV: production
           PUBLIC_APP_URL: ${{ needs.verify.outputs.target == 'production' && 'https://recast.li' || 'https://preview.recast.li' }}
+          # Prerender emulates the platform and reaches the DATABASE_URL fallback (the Hyperdrive binding is only wired in the live Worker).
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: pnpm --filter recast-web build
 
       # Top-level config is production; `--env preview` selects the preview worker.

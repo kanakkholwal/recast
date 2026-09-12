@@ -77,6 +77,7 @@ import {
 	getHidePanelFromCapture,
 	getLastSource,
 	getNativeEncoder,
+	getAgentLiveApply,
 	getOutputDir,
 	getWindowTransparency,
 	installCli,
@@ -85,6 +86,7 @@ import {
 	setCloseToTray,
 	setHidePanelFromCapture,
 	setNativeEncoder,
+	setAgentLiveApply,
 	setOutputDir,
 	setWindowTransparency,
 	uninstallCli,
@@ -116,6 +118,7 @@ let hidePanelFromCapture = $state(true);
 // Backed by AppConfig, not the experimental store: the backend reads it before any window exists.
 let nativeEncoder = $state(false);
 let nativeEncoderSupported = $state(false);
+let agentLiveApply = $state(false);
 // Content protection is a compile-time no-op on Linux, so the toggle is shown disabled rather than pretending.
 const isLinux = platform() === "linux";
 // Window-chrome toggle only differs on macOS; Windows/Linux render one control set, so it's dead there.
@@ -289,6 +292,11 @@ async function fetchSettings() {
 		// Older builds without the commands: leave it off and unsupported.
 	}
 	try {
+		agentLiveApply = await getAgentLiveApply();
+	} catch {
+		// Older builds without the commands: leave them off.
+	}
+	try {
 		cliAutoInstall = await getCliAutoInstall();
 	} catch {
 		// The optimistic default is fine; settings just won't reflect an explicit off toggle without the command.
@@ -338,6 +346,17 @@ async function toggleNativeEncoder() {
 		await setNativeEncoder(next);
 	} catch (e) {
 		nativeEncoder = !next;
+		toast.error(`Could not update setting: ${e}`);
+	}
+}
+
+async function toggleAgentLiveApply() {
+	const next = !agentLiveApply;
+	agentLiveApply = next;
+	try {
+		await setAgentLiveApply(next);
+	} catch (e) {
+		agentLiveApply = !next;
 		toast.error(`Could not update setting: ${e}`);
 	}
 }
@@ -904,6 +923,18 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               disabled={!nativeEncoderSupported}
               onCheckedChange={() => toggleNativeEncoder()}
               aria-label="Use the GPU writer instead of FFmpeg"
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Let agents edit the open project live"
+            description={agentLiveApply
+              ? "An agent's edits land in the editor as they happen, each one undoable. Off, agents propose on a branch you review."
+              : "Agents propose on a branch you review and apply. Turn on to let them edit the open folder project directly."}
+          >
+            <Switch
+              checked={agentLiveApply}
+              onCheckedChange={() => toggleAgentLiveApply()}
+              aria-label="Let agents edit the open project live"
             />
           </SettingsRow>
         </SectionCard>

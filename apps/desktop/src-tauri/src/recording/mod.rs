@@ -31,6 +31,35 @@ pub const RECORDING_FPS: u32 = 60;
 
 //  Recording stats and artifacts
 
+/// The stem every session's in-progress media is written under, before a stop packages it.
+const SESSION_STEM: &str = "recast-session-";
+
+/// Removes session media a crash left in the recordings folder, and any `.recast.tmp`
+/// an interrupted atomic write left beside a project. STARTUP only: a running
+/// recording owns these names.
+pub fn sweep_orphaned_artifacts(output_dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(output_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let orphan = name.starts_with(SESSION_STEM)
+            && [
+                ".recording.mp4",
+                ".cursor.json",
+                ".audio.wav",
+                ".microphone.wav",
+                ".camera.mp4",
+            ]
+            .iter()
+            .any(|suffix| name.ends_with(suffix));
+        if orphan || name.ends_with(".recast.tmp") {
+            log::info!("removing orphaned artifact: {}", entry.path().display());
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingStats {
@@ -604,7 +633,7 @@ impl RecordingManager {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        let stem = format!("recast-session-{started_at_unix_ms}");
+        let stem = format!("{SESSION_STEM}{started_at_unix_ms}");
         let recording_path = output_dir.join(format!("{stem}.recording.mp4"));
         let cursor_path = output_dir.join(format!("{stem}.cursor.json"));
         let audio_path = output_dir.join(format!("{stem}.audio.wav"));

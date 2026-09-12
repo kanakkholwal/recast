@@ -65,6 +65,9 @@ pub struct PreviewEngine {
     canvas_size: Option<(u32, u32)>,
     /// See `flush_uploads`.
     defers_uploads: bool,
+    /// Set by the host once it has a face for every family the text annotations
+    /// name; until then the page draws them and the engine leaves them alone.
+    draw_annotation_text: bool,
     frames: Vec<(LayerId, LayerRing)>,
     background: Option<LayerTexture>,
     /// Indexed by `CursorSlot::index`. An empty slot draws the dot instead.
@@ -74,6 +77,8 @@ pub struct PreviewEngine {
     /// Keyed by the annotation's image path, matching the host's own per-path
     /// cache, so two annotations on one file upload once.
     annotation_images: Vec<(String, LayerTexture)>,
+    /// The last v1 state, so `patchScene` can merge a few fields instead of re-parsing the whole state.
+    state: crate::scene_io::PatchableState,
 }
 
 #[wasm_bindgen]
@@ -130,18 +135,34 @@ impl PreviewEngine {
             surface_size: (0, 0),
             canvas_size: None,
             defers_uploads,
+            draw_annotation_text: false,
             frames: Vec::new(),
             background: None,
             cursor_sprites: [None, None, None, None],
             cursor_hotspots: [[0.5, 0.5]; 4],
             annotation_images: Vec::new(),
+            state: Default::default(),
         })
     }
 
     #[wasm_bindgen(js_name = setScene)]
     pub fn set_scene(&mut self, json: &str) -> Result<(), JsValue> {
         let scene = parse_scene(json).map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.state.remember(json);
         self.session.set_scene(scene);
+        Ok(())
+    }
+
+    /// A few changed top-level state fields, merged into the last full state: the edit path without a whole-state
+    /// serialise. Refused (so the caller falls back to `setScene`) when no full state was set yet.
+    #[wasm_bindgen(js_name = patchScene)]
+    pub fn patch_scene(&mut self, patch_json: &str) -> Result<(), JsValue> {
+        let state = self
+            .state
+            .apply(patch_json)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        self.session
+            .set_scene(recast_scene::migrate::to_scene(&state));
         Ok(())
     }
 
@@ -191,6 +212,57 @@ impl PreviewEngine {
     #[wasm_bindgen(js_name = setCaptionFont)]
     pub fn set_caption_font(&mut self, data: Vec<u8>, index: u32) -> bool {
         self.session.set_caption_font(data, index)
+    }
+
+    /// Whether the engine draws the words of text annotations. Off until the host
+    /// says it has a face for EVERY family they use: drawing some of them here
+    /// and the rest in the page would put two shapers in one frame.
+    #[wasm_bindgen(js_name = setDrawAnnotationText)]
+    pub fn set_draw_annotation_text(&mut self, on: bool) {
+        self.draw_annotation_text = on;
+    }
+
+    /// A font file to draw one family with, for the text annotations and
+    /// composition items that name it. Required in a browser, which has no font
+    /// database of its own. False when the bytes are not a face we can read.
+    #[wasm_bindgen(js_name = setTextFont)]
+    pub fn set_text_font(&mut self, family: &str, weight: u32, data: Vec<u8>, index: u32) -> bool {
+        self.session
+            .set_text_font(family, weight as u16, data, index)
+    }
+
+    /// Every face the scene's words ask for, as JSON `[{stack, weight}]`, so the host can
+    /// supply each before the engine draws them. The export asks the same session.
+    #[wasm_bindgen(js_name = wantedFaces)]
+    pub fn wanted_faces(&self) -> String {
+        let faces: Vec<serde_json::Value> = self
+            .session
+            .wanted_faces()
+            .into_iter()
+            .map(|face| serde_json::json!({ "stack": face.stack, "weight": face.weight }))
+            .collect();
+        serde_json::Value::Array(faces).to_string()
+    }
+
+    /// The face unnamed or unfound families draw with, as JSON `{stack, weight}`.
+    #[wasm_bindgen(js_name = fallbackFace)]
+    pub fn fallback_face(&self) -> String {
+        let face = self.session.fallback_face_request();
+        serde_json::json!({ "stack": face.stack, "weight": face.weight }).to_string()
+    }
+
+    /// Every image file the scene draws, annotation images and composition slides, as JSON.
+    #[wasm_bindgen(js_name = wantedImages)]
+    pub fn wanted_images(&self) -> String {
+        serde_json::to_string(&self.session.wanted_images()).unwrap_or_else(|_| "[]".into())
+    }
+
+    /// Names the text annotation the host is drawing itself, because the caret
+    /// is in it. The engine keeps rendering everything else about that
+    /// annotation; pass `None` when editing ends. Nothing about this is saved.
+    #[wasm_bindgen(js_name = setEditingAnnotation)]
+    pub fn set_editing_annotation(&mut self, id: Option<String>) {
+        self.session.set_editing_annotation(id);
     }
 
     /// Where the pointer sits at `output_time` in CANVAS PIXELS as `[x, y, alpha, spritePx, dotRadiusPx, slot, hlX, hlY, hlRadiusPx, hlAlpha]`, or empty when nothing is drawn.
@@ -581,6 +653,9 @@ impl PreviewEngine {
             );
         }
 
+        if self.draw_annotation_text {
+            inputs.set_annotation_glyphs(self.session.annotation_glyphs(output_time));
+        }
         inputs.set_caption(self.session.caption_frame(output_time));
         let stats = self.session.render(output_time, &inputs, &view);
         drop(view);

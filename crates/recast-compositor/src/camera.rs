@@ -1,3 +1,4 @@
+use recast_scene::bind::PlacementRule;
 use recast_scene::v1::nodes::{CameraKeyframe, CameraOverlaySettings, CameraPlacement, ZoomRegion};
 use recast_scene::v1::Easing;
 
@@ -252,6 +253,20 @@ pub fn bubble_params(
     geometry: CanvasGeometry,
     cursor: Option<(f64, f64)>,
 ) -> Option<BubbleParams> {
+    let rules = PlacementRule::from_settings(settings);
+    bubble_params_ruled(settings, &rules, regions, source_time, geometry, cursor)
+}
+
+/// The bubble from its placement rules, the scene's data for the three `<bind>`s, folded in their declared order.
+/// `settings` still supplies the base placement, the shape and the mirror.
+pub fn bubble_params_ruled(
+    settings: &CameraOverlaySettings,
+    rules: &[PlacementRule],
+    regions: &[&ZoomRegion],
+    source_time: f64,
+    geometry: CanvasGeometry,
+    cursor: Option<(f64, f64)>,
+) -> Option<BubbleParams> {
     if !settings.enabled {
         return None;
     }
@@ -260,35 +275,58 @@ pub fn bubble_params(
     } else {
         1.0
     };
-
-    let base = placement_at(
-        &settings.default_placement,
-        &settings.keyframes,
-        source_time,
-        settings.keyframe_easing,
-    );
-    let placement = if settings.zoom_follow {
-        let (scale, cx, cy) = follow_scale_at(
-            regions,
-            source_time,
-            settings.zoom_follow_duration,
-            settings.zoom_follow_easing,
-        );
-        follow_placement(&base, scale, cx, cy, settings.zoom_follow_strength, aspect)
-    } else {
-        base
-    };
-    // After the zoom: the zoom decides the size and where the bubble is heading, the pointer only nudges it off whatever it is covering.
-    let placement = match (settings.cursor_dodge, cursor) {
-        (true, Some(at)) => dodge_placement(&placement, at, settings.cursor_dodge_strength, aspect),
-        _ => placement,
-    };
+    let placement = rules
+        .iter()
+        .fold(settings.default_placement.clone(), |placement, rule| {
+            apply_rule(&placement, rule, regions, source_time, aspect, cursor)
+        });
 
     Some(BubbleParams {
         dest: bubble_rect(&placement, geometry),
         corner_radius: corner_radius_for(settings),
         transform: bubble_transform(settings),
     })
+}
+
+/// One rule over the placement so far. Keys replace it (the glide has its own base), follow grows and drifts it,
+/// dodge nudges it off the pointer; the pointer only nudges what the zoom already decided.
+fn apply_rule(
+    placement: &CameraPlacement,
+    rule: &PlacementRule,
+    regions: &[&ZoomRegion],
+    source_time: f64,
+    aspect: f64,
+    cursor: Option<(f64, f64)>,
+) -> CameraPlacement {
+    match rule {
+        PlacementRule::Keys { keys, ease } => {
+            let frames: Vec<CameraKeyframe> = keys
+                .iter()
+                .map(|k| CameraKeyframe {
+                    at_sec: k.at,
+                    placement: CameraPlacement {
+                        x: k.x,
+                        y: k.y,
+                        width: k.w,
+                        height: k.h,
+                    },
+                })
+                .collect();
+            placement_at(placement, &frames, source_time, *ease)
+        }
+        PlacementRule::Follow {
+            strength,
+            duration,
+            ease,
+        } => {
+            let (scale, cx, cy) = follow_scale_at(regions, source_time, *duration, *ease);
+            follow_placement(placement, scale, cx, cy, *strength, aspect)
+        }
+        PlacementRule::Dodge { strength } => match cursor {
+            Some(at) => dodge_placement(placement, at, *strength, aspect),
+            None => placement.clone(),
+        },
+    }
 }
 
 pub fn bubble_shadow(
@@ -311,11 +349,86 @@ pub fn bubble_shadow(
         half_w: bubble.dest.w / 2.0,
         half_h: bubble.dest.h / 2.0,
         radius_px: bubble.corner_radius * bubble.dest.w.min(bubble.dest.h),
+        warp: None,
     })
 }
 
 #[cfg(test)]
 mod tests {
+    use recast_scene::bind::{keys_at, Key};
+
+    /// Step 9's first proof: the camera keyframe glide is a `keys` binding per placement component, sample for sample.
+    #[test]
+    fn camera_keyframes_are_a_keys_binding_per_component() {
+        let ease = Easing {
+            x1: 0.25,
+            y1: 0.1,
+            x2: 0.25,
+            y2: 1.0,
+        };
+        let frames = vec![
+            CameraKeyframe {
+                at_sec: 1.0,
+                placement: CameraPlacement {
+                    x: 0.1,
+                    y: 0.2,
+                    width: 0.2,
+                    height: 0.2,
+                },
+            },
+            CameraKeyframe {
+                at_sec: 4.0,
+                placement: CameraPlacement {
+                    x: 0.7,
+                    y: 0.6,
+                    width: 0.3,
+                    height: 0.3,
+                },
+            },
+            CameraKeyframe {
+                at_sec: 6.0,
+                placement: CameraPlacement {
+                    x: 0.4,
+                    y: 0.4,
+                    width: 0.25,
+                    height: 0.25,
+                },
+            },
+        ];
+        let keys = |pick: fn(&CameraPlacement) -> f64| -> Vec<Key> {
+            frames
+                .iter()
+                .map(|k| Key {
+                    at: k.at_sec,
+                    value: pick(&k.placement),
+                    ease,
+                })
+                .collect()
+        };
+        let (kx, ky, kw, kh) = (
+            keys(|p| p.x),
+            keys(|p| p.y),
+            keys(|p| p.width),
+            keys(|p| p.height),
+        );
+        let base = CameraPlacement::default();
+        for i in 0..80 {
+            let t = f64::from(i) * 0.1;
+            let engine = placement_at(&base, &frames, t, ease);
+            for (name, engine_v, bound) in [
+                ("x", engine.x, keys_at(&kx, t, base.x)),
+                ("y", engine.y, keys_at(&ky, t, base.y)),
+                ("w", engine.width, keys_at(&kw, t, base.width)),
+                ("h", engine.height, keys_at(&kh, t, base.height)),
+            ] {
+                assert!(
+                    (engine_v - bound).abs() < 1e-6,
+                    "{name} at {t}: engine {engine_v} vs binding {bound}"
+                );
+            }
+        }
+    }
+
     use super::*;
 
     /// Shared with `camera-overlay.logic.test.ts`. The preview's bubble and the

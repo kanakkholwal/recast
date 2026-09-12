@@ -5,11 +5,13 @@
  */
 
 import type { EditorServices, PickFileOptions } from "@recast/editor/services";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { fileUrl, grantAssetPath } from "$lib/assetUrl";
 import {
 	cancelTranscription,
 	captionCapabilities,
 	captionFontFile,
+	engineFontBytes,
+	installedFontBytes,
 	deleteCaptionModel,
 	detectSilence,
 	downloadCaptionModel,
@@ -19,6 +21,7 @@ import {
 	exportCaptions,
 	exportScreenText,
 	extractWaveform,
+	fetchExtensionAsset,
 	fetchExtensionRegistry,
 	generateThumbnails,
 	getCachedAssetPath,
@@ -41,8 +44,8 @@ import {
  *  the asset protocol. */
 function resolveAssetUrl(ref: string): string {
 	if (!ref) return ref;
-	if (/^(data|blob|https?|asset|tauri):/i.test(ref)) return ref;
-	return convertFileSrc(ref);
+	if (/^(data|blob|https?|recast-asset|tauri):/i.test(ref)) return ref;
+	return fileUrl(ref);
 }
 
 /** The view's bytes as a standalone `ArrayBuffer`, copying only when it really
@@ -63,7 +66,10 @@ async function pickFile(opts: PickFileOptions): Promise<string | null> {
 		title: opts.title,
 		filters: [{ name: "Files", extensions: opts.accept }],
 	});
-	return typeof selected === "string" ? selected : null;
+	if (typeof selected !== "string") return null;
+	// A pick is the user's authorisation to show the file; the scheme refuses anything not granted.
+	await grantAssetPath(selected);
+	return selected;
 }
 
 /** Ask for a destination path. The backend owns every actual write, so each
@@ -107,12 +113,15 @@ export const tauriEditorServices: EditorServices = {
 	assets: {
 		googleFont: ensureGoogleFont,
 		captionFontFile,
+		engineFontBytes,
+		installedFontBytes,
 		ensureInstalled: ensureAssetsInstalled,
 		getCachedPath: getCachedAssetPath,
 		hydrate: hydrateCachedAssets,
 	},
 	extensions: {
 		fetchRegistry: fetchExtensionRegistry,
+		fetchAssetBytes: fetchExtensionAsset,
 		install: installExtension,
 		listInstalled: listInstalledExtensions,
 		setEnabled: setExtensionEnabled,

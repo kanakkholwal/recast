@@ -111,8 +111,33 @@ pub struct EditorDocument {
     pub track_offsets: crate::recording::TrackOffsets,
     pub metadata: VideoMetadata,
     pub render_state: RenderState,
-    /// True when a legacy bundle must be migrated before the editor loads it.
+    /// `None` for a plain video opened without a project.
+    pub format: Option<crate::project::Format>,
+    /// True when the editor must convert a `.recast` archive into a project directory before loading it.
     pub needs_migration: bool,
+}
+
+impl EditorDocument {
+    /// An archive, answered without reading it: the editor stops on `needs_migration`
+    /// and prompts, so every other field would be thrown away.
+    #[must_use]
+    pub fn needing_conversion(path: String) -> Self {
+        Self {
+            project_path: path.clone(),
+            media_path: path,
+            cursor_path: None,
+            edits_path: None,
+            audio_path: None,
+            microphone_path: None,
+            camera_path: None,
+            camera_capture: CameraCapture::Off,
+            track_offsets: crate::recording::TrackOffsets::default(),
+            metadata: VideoMetadata::default(),
+            render_state: RenderState::default(),
+            format: None,
+            needs_migration: true,
+        }
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -204,6 +229,9 @@ pub struct AppConfig {
     /// Default off because the native path, though complete and tested, has only run on the author's hardware; `RECAST_NATIVE_ENCODER=1` overrides.
     #[serde(default)]
     pub native_encoder: bool,
+    /// Lets an agent land ops on the open project directly (one undo step each) instead of proposing on a branch.
+    #[serde(default)]
+    pub agent_live_apply: bool,
 }
 
 fn default_cli_auto_install() -> bool {
@@ -238,6 +266,7 @@ impl Default for AppConfig {
             cli_auto_install: true,
             cli_install_attempted: false,
             native_encoder: false,
+            agent_live_apply: false,
         }
     }
 }
@@ -479,9 +508,7 @@ pub struct EditorSession {
 }
 
 impl EditorSession {
-    /// Inactivity window after which the lock is reclaimable. A long
-    /// `recast editor patch` over a multi-MB `RenderState` should keep the
-    /// activity stamp fresh (`commands::editor_session::record_activity`);
-    /// the TTL is the safety net for a crashed CLI/GUI that never released.
+    /// Inactivity window after which the lock is reclaimable; a long `recast project patch` keeps the stamp fresh via `record_activity`.
+    /// The TTL is the safety net for a crashed CLI or GUI that never released.
     pub const TTL_MS: i64 = 60_000;
 }

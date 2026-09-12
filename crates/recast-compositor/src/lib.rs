@@ -4,9 +4,14 @@
 pub mod annotation;
 pub mod camera;
 pub mod caption;
+pub mod component;
 pub mod eval;
+pub mod faces;
 pub mod geometry;
+pub mod host_needs;
+pub mod item_text;
 pub mod layout;
+pub mod plane;
 pub mod render;
 pub mod session;
 pub mod source;

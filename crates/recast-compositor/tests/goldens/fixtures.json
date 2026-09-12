@@ -174,6 +174,154 @@
 			}
 		},
 		{
+			"name": "tilted",
+			"time": 1.0,
+			"overrides": {
+				"padding": 20.0,
+				"transforms": [{ "layer": "screen", "ry": 35.0, "rx": 8.0, "z": 0.15 }]
+			},
+			"without": {
+				"padding": 20.0
+			}
+		},
+		{
+			"name": "tilted-dressed",
+			"time": 1.0,
+			"overrides": {
+				"padding": 24.0,
+				"borderRadius": 28.0,
+				"shadow": { "enabled": true, "blur": 14.0, "spread": 0.0, "offsetY": 8.0, "opacity": 75.0, "color": "#000000" },
+				"annotations": [{ "id": "a1", "start": 0.0, "end": 10.0, "fill": "#ff00ff", "stroke": { "width": 0.0, "color": "transparent" }, "kind": { "kind": "rect", "x": 0.55, "y": 0.15, "w": 0.35, "h": 0.4 } }],
+				"transforms": [{ "layer": "screen", "ry": -30.0, "z": 0.2 }]
+			},
+			"without": {
+				"padding": 24.0,
+				"borderRadius": 28.0,
+				"shadow": { "enabled": true, "blur": 14.0, "spread": 0.0, "offsetY": 8.0, "opacity": 75.0, "color": "#000000" },
+				"annotations": [{ "id": "a1", "start": 0.0, "end": 10.0, "fill": "#ff00ff", "stroke": { "width": 0.0, "color": "transparent" }, "kind": { "kind": "rect", "x": 0.55, "y": 0.15, "w": 0.35, "h": 0.4 } }]
+			}
+		},
+		{
+			"_why_fields": "A blur annotation anchored to the video rides the tilt: its rect is unwarped into plane space while the blurred sample stays at the fragment, which is the only pass pairing the two.",
+			"name": "tilted-blur",
+			"time": 1.0,
+			"overrides": {
+				"padding": 24.0,
+				"annotations": [{ "id": "b1", "start": 0.0, "end": 10.0, "fill": "transparent", "stroke": { "width": 0.0, "color": "transparent" }, "kind": { "kind": "blur", "x": 0.5, "y": 0.2, "w": 0.4, "h": 0.5, "strength": 0.8, "radius": 0.1 } }],
+				"transforms": [{ "layer": "screen", "ry": -32.0, "z": 0.2 }]
+			},
+			"without": {
+				"padding": 24.0,
+				"annotations": [{ "id": "b1", "start": 0.0, "end": 10.0, "fill": "transparent", "stroke": { "width": 0.0, "color": "transparent" }, "kind": { "kind": "blur", "x": 0.5, "y": 0.2, "w": 0.4, "h": 0.5, "strength": 0.8, "radius": 0.1 } }]
+			}
+		},
+		{
+			"_why_fields": "An overlay recipe covers the canvas and is placed by its own parameters; nothing else in the set exercises the component pass.",
+			"name": "component-spotlight",
+			"time": 1.0,
+			"overrides": {
+				"padding": 12.0,
+				"graphics": [{ "id": "g1", "component": "spotlight@1.0", "params": { "cx": "0.35", "cy": "0.45", "radius": "0.28", "strength": "0.75" } }]
+			},
+			"without": { "padding": 12.0 }
+		},
+		{
+			"_why_time": "Halfway through the instance's own window, so the band is mid-travel rather than at an end.",
+			"name": "component-sweep",
+			"time": 2.0,
+			"overrides": {
+				"padding": 24.0,
+				"borderRadius": 28.0,
+				"graphics": [{ "id": "g1", "component": "sweep@1.0", "start": 0.0, "duration": 4.0, "fallbackSurface": "screen", "params": { "strength": "0.8", "width": "0.3" } }]
+			},
+			"without": { "padding": 24.0, "borderRadius": 28.0 }
+		},
+		{
+			"_why_fields": "An instance the registry cannot serve still draws, so a missing component is visible rather than silent.",
+			"name": "component-placeholder",
+			"time": 1.0,
+			"overrides": {
+				"padding": 12.0,
+				"graphics": [{ "id": "g1", "component": "not-real@3.0", "params": { "x": "0.2", "y": "0.2", "w": "0.4", "h": "0.4" } }]
+			},
+			"without": { "padding": 12.0 }
+		},
+		{
+			"_why_fields": "The one recipe that mixes a colour per pixel, so a single tint slot would not carry it.",
+			"name": "component-mesh",
+			"time": 1.0,
+			"overrides": {
+				"padding": 30.0,
+				"graphics": [{ "id": "g1", "component": "mesh@1.0", "start": 0.0, "duration": 4.0, "params": { "a": "#7c3aed", "b": "#06b6d4", "strength": "0.9" } }]
+			},
+			"without": { "padding": 30.0 }
+		},
+		{
+			"_why_time": "Mid-crossfade, where both items are partly on and neither is at full: the frame a hard cut could never produce.",
+			"_why_fields": "The only fixture with a composition, and the only one binding an image, so it covers the item pass and its fit modes too. The recording underneath is the harness's: a real composition document has no screen, and the validator refuses both in one file.",
+			"name": "composition-dissolve",
+			"time": 3.25,
+			"overrides": {
+				"padding": 0.0,
+				"composition": {
+					"transition": "dissolve",
+					"transitionDur": 1.0,
+					"items": [
+						{ "id": "i1", "at": 0.0, "dur": 4.0, "content": { "kind": "image", "src": "media/a.png", "fit": "cover" } },
+						{ "id": "i2", "at": 3.0, "dur": 4.0, "area": { "x": 0.52, "y": 0.48, "w": 0.44, "h": 0.48 },
+						  "content": { "kind": "image", "src": "media/b.png", "fit": "contain", "radius": 0.08 } }
+					]
+				}
+			},
+			"without": {
+				"padding": 0.0,
+				"composition": {
+					"transition": "none",
+					"items": [
+						{ "id": "i1", "at": 0.0, "dur": 4.0, "content": { "kind": "image", "src": "media/a.png", "fit": "cover" } },
+						{ "id": "i2", "at": 3.0, "dur": 4.0, "area": { "x": 0.52, "y": 0.48, "w": 0.44, "h": 0.48 },
+						  "content": { "kind": "image", "src": "media/b.png", "fit": "contain", "radius": 0.08 } }
+					]
+				}
+			}
+		},
+		{
+			"_why_time": "Inside the hold, so the panel is fully in and its rounding and box are what the frame shows. The words are not here: the browser arm has no system fonts, so text is covered by unit tests instead.",
+			"name": "component-title-card",
+			"time": 2.0,
+			"overrides": {
+				"padding": 12.0,
+				"graphics": [{ "id": "g1", "component": "title-card@1.0", "start": 0.0, "duration": 4.0, "params": { "title": "Recast", "subtitle": "A demo", "fill": "#101014", "radius": "0.06" } }]
+			},
+			"without": { "padding": 12.0 }
+		},
+		{
+			"_why_time": "Mid-wipe, where the soft leading edge is visible and a hold-time frame would look like a plain bar.",
+			"name": "component-lower-third",
+			"time": 0.3,
+			"overrides": {
+				"padding": 12.0,
+				"graphics": [{ "id": "g1", "component": "lower-third@1.0", "start": 0.0, "duration": 4.0, "params": { "name": "Kanak", "role": "Recast", "fill": "#1d4ed8" } }]
+			},
+			"without": { "padding": 12.0 }
+		},
+		{
+			"_why_fields": "The material block (06, D-6) on a tilted card: contact darkens what recedes, which needs the card's own depth, and the rim lifts its edge. Both are off in every other fixture, so those stay byte-identical.",
+			"name": "tilted-lit",
+			"time": 1.0,
+			"overrides": {
+				"padding": 24.0,
+				"borderRadius": 20.0,
+				"transforms": [{ "layer": "screen", "ry": -34.0, "z": 0.18 }],
+				"materials": [{ "layer": "screen", "contact": 0.65, "rim": 0.35, "rimWidth": 0.05 }]
+			},
+			"without": {
+				"padding": 24.0,
+				"borderRadius": 20.0,
+				"transforms": [{ "layer": "screen", "ry": -34.0, "z": 0.18 }]
+			}
+		},
+		{
 			"name": "background-blur",
 			"time": 1.0,
 			"overrides": {

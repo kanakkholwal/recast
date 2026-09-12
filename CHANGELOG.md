@@ -59,6 +59,40 @@ page and a small in-app dialog. Write for that.
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-09-12
+
+### Highlights
+- Projects are saved as folders, with the edit list in a readable `project.rcx` you can diff, keep in git or edit by hand.
+- Agents connected over MCP can check a project, read its transcript and frames, remove silences and add zooms, then propose the result for you to review.
+- Titles, lower thirds, 3D tilt and lighting reach the exported file, drawn by the same engine as the preview.
+
+### Added
+- A project is a folder named like `Demo.recast`, holding the recording, its tracks and a `project.rcx` edit list. Edit `project.rcx` in a text editor while the project is open and the change appears in the editor; a file that does not parse is reported with its line and column.
+- Import a `.recast` file from the Recordings page, and export any project as a single `.recast` file to send to someone.
+- Type into a text annotation directly on the preview.
+- Graphics components such as title cards, lower thirds, spotlights and counters, each with its own settings.
+- Variables: declare a colour, font or piece of text once and use it anywhere in the project. The inspector's Variables tab edits them.
+- 3D tilt for the screen and the camera, with an optional contact shadow and rim light.
+- Bindings: a property can follow the pointer, a click, the zoom or the word being spoken.
+- Compositions: a project can be a sequence of images and text with transitions and no recording at all. Each text item can use its own font.
+- Components, 3D tilt, bindings and compositions are written in `project.rcx`, by hand or by an agent. The editor previews and exports them but has no controls for them yet.
+- New agent tools: `recast_check` flags problems such as a zoom that is never visible, `recast_transcript`, `recast_silences` and `recast_frames` read the recording, and `recast_remove_silences` and `recast_add_zoom` make the common edits. `recast skills install` writes the editing instructions an agent loads.
+- Settings, "Let agents edit the open project live" lets an agent's edits land in the open editor as one undo step instead of waiting on a branch for review.
+
+### Changed
+- New recordings are saved as folders instead of single `.recast` files. Opening an older `.recast` file converts it to a folder and keeps the original as a backup.
+- Edits are committed to a journal inside the project, so an interrupted session is replayed the next time it opens. The separate recovery copy is gone.
+- Projects that use camera layouts, pointer dodging, graphics components, 3D tilt, lighting, bindings or compositions always export through the engine, whether or not "Export in the background" is on. The legacy exporter cannot draw them.
+- Text the engine draws uses the installed font or downloads the Google font of the same name, so it matches the preview. An export whose font cannot be found anywhere stops and names the font instead of leaving the text blank.
+
+### Fixed
+- "Export in the background" had no effect on exports started from the editor, which always used the legacy exporter.
+- An annotation or zoom did not show on the frame where you placed it until the playhead moved forward a little.
+- Times in the annotation and zoom panels did not match the playhead once a project had cuts or speed changes.
+- A text annotation that could not be drawn was left out of the export without a word. You now get a warning.
+
+## [0.4.6] - 2026-09-07
+
 ### Highlights
 - Recording, audio and camera capture now run on one engine that works the same on Windows, macOS and Linux.
 - The camera can take half the frame or all of it, and change layout from one clip to the next.

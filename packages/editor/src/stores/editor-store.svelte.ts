@@ -14,6 +14,7 @@ import {
 	keyframesFromMotionSegments,
 } from "../components/_components/camera-overlay.logic";
 import { resolveTokenRgb, resolveTokenRgba } from "../lib/annotations/canvas-tokens";
+import { placedTimeRange } from "../lib/annotations/place-defaults";
 import {
 	editAnchor,
 	layoutAtStart,
@@ -73,6 +74,12 @@ import {
 	WALLPAPERS,
 	wallpaperBackgroundValue,
 	type ZoomRegion,
+	type LayerBinding,
+	type Composition,
+	type GraphicSpec,
+	type VarSpec,
+	type LayerMaterial,
+	type LayerTransform,
 } from "../lib/editor/render-state";
 import type { TimeMode } from "../lib/editor/time";
 import { log } from "../lib/log";
@@ -218,6 +225,10 @@ export function createEditorStore() {
 	let annotationTool = $state<AnnotationKindName | null>(null);
 	// Layer-panel hover: the overlay flashes the matching annotation so a layer is findable in a busy frame.
 	let hoveredAnnotationId = $state<string | null>(null);
+	// The engine draws every text annotation but this one, whose words the editor is drawing live in a contenteditable.
+	let editingAnnotationId = $state<string | null>(null);
+	// True once the engine has a face for every family the text annotations use, so the DOM layer stops painting their glyphs. All or none: two shapers in one frame drift.
+	let engineDrawsAnnotationText = $state(false);
 	// Independent of per-annotation `hidden`, so the master toggle never tramples user state.
 	let annotationsGloballyHidden = $state<boolean>(false);
 	// Snap engine on/off. Default on. Alt held during drag bypasses regardless.
@@ -240,6 +251,13 @@ export function createEditorStore() {
 
 	// `null` means linear; a curve reshapes the per-sample lerp in the WebGL preview.
 	let cursorMotionEasing = $state<Easing | null>(null);
+	// Declared by the document, never by a panel; carried so every save and every preview frame keeps them.
+	let bindings = $state.raw<LayerBinding[]>([]);
+	let transforms = $state.raw<LayerTransform[]>([]);
+	let materials = $state.raw<LayerMaterial[]>([]);
+	let graphics = $state.raw<GraphicSpec[]>([]);
+	let vars = $state.raw<VarSpec[]>([]);
+	let composition = $state.raw<Composition | undefined>(undefined);
 
 	// Cursor settings
 	let cursorSettings = $state<CursorSettings>({
@@ -355,6 +373,12 @@ export function createEditorStore() {
 			outputAspect,
 			lastAppliedPresetId,
 			cursorMotionEasing,
+			bindings,
+			transforms,
+			materials,
+			graphics,
+			vars,
+			composition,
 			musicClips,
 			captionStyle,
 		};
@@ -524,6 +548,12 @@ export function createEditorStore() {
 		outputAspect = s.outputAspect ?? "source";
 		lastAppliedPresetId = s.lastAppliedPresetId ?? null;
 		cursorMotionEasing = s.cursorMotionEasing ?? null;
+		bindings = s.bindings ?? [];
+		transforms = s.transforms ?? [];
+		materials = s.materials ?? [];
+		graphics = s.graphics ?? [];
+		vars = s.vars ?? [];
+		composition = s.composition;
 		// Merge over defaults so an older snapshot missing newer style keys stays valid.
 		if (s.captionStyle) captionStyle = { ...DEFAULT_CAPTION_STYLE, ...s.captionStyle };
 	}
@@ -1014,14 +1044,11 @@ export function createEditorStore() {
 	): Annotation {
 		pushUndoState();
 		const clipEnd = trimEnd || metadata?.duration || 0;
-		// Clamp into the trimmed clip so an annotation added at the trim end still yields a forward range.
-		const now = Math.min(Math.max(currentTime, trimStart), clipEnd);
-		let s = start ?? now;
-		let e = end ?? Math.min(clipEnd, s + 2.0);
-		if (!(e > s)) {
-			s = Math.max(trimStart, clipEnd - 2.0);
-			e = clipEnd;
-		}
+		// An explicit start is a range edge, not a placement point, so no fade leads into it.
+		const lead = start === undefined ? DEFAULT_ANNOTATION_RAMP : 0;
+		const placed = placedTimeRange(start ?? currentTime, trimStart, clipEnd, lead);
+		const s = placed.start;
+		const e = end !== undefined && end > s ? end : placed.end;
 		// Theme colour rather than a fixed blue, resolved to a concrete value here because the export bakes it.
 		const themeColor = resolveTokenRgb("var(--primary)");
 		const annotation: Annotation = {
@@ -1050,6 +1077,14 @@ export function createEditorStore() {
 		return annotation;
 	}
 
+	/** Every `$name` reference picks the new value up on the next frame, so one
+	 *  edit here can move the whole composition. Undo is the caller's, as with annotations: a drag is one entry, not one per pixel. */
+	function setVariable(name: string, value: string) {
+		if (!vars.some((v) => v.name === name && v.value !== value)) return;
+		vars = vars.map((v) => (v.name === name ? { ...v, value } : v));
+		log.debounced(`variable-${name}`, "variable", "set", { name });
+	}
+
 	function updateAnnotation(id: string, updates: Partial<Annotation>) {
 		// Position/style edits stream from drags + property sliders, so debounce.
 		log.debounced(`annotation-${id}`, "annotation", "updated", {
@@ -1064,6 +1099,7 @@ export function createEditorStore() {
 		annotations = annotations.filter((a) => a.id !== id);
 		if (selectedAnnotationId === id) selectedAnnotationId = null;
 		if (hoveredAnnotationId === id) hoveredAnnotationId = null;
+		if (editingAnnotationId === id) editingAnnotationId = null;
 		log.info("annotation", "removed", { id });
 	}
 
@@ -1204,6 +1240,12 @@ export function createEditorStore() {
 		annotationSnapEnabled = true;
 		annotationZSeq = 1;
 		cursorMotionEasing = null;
+		bindings = [];
+		transforms = [];
+		materials = [];
+		graphics = [];
+		vars = [];
+		composition = undefined;
 		cursorSettings = {
 			enabled: true,
 			size: 2,
@@ -1394,6 +1436,15 @@ export function createEditorStore() {
 	function outputToRenderSec(outputSec: number): number {
 		if (!showCutGaps) return outputSec;
 		return originalToOutput(renderMap, outputToOriginal(timeMapMemo, outputSec));
+	}
+	/**
+	 * A source-clock time (where annotations, zooms and the playhead live) as the
+	 * position the viewer will see it at. Every time PRINTED for a human goes
+	 * through this: raw source seconds disagree with the ruler as soon as there is
+	 * one cut or one speed change.
+	 */
+	function displaySec(originalSec: number): number {
+		return originalToOutput(timeMapMemo, originalSec);
 	}
 	function renderSecToOutputSec(renderSec: number): number {
 		if (!showCutGaps) return renderSec;
@@ -1652,6 +1703,53 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
+	// Memoised so the preview and the replica see what moved by identity and serialise only that.
+	const zoomRegionsSnapshot = $derived(
+		zoomRegions.map((region) => ({
+			id: region.id,
+			start: region.start,
+			end: region.end,
+			scale: region.scale,
+			easeIn: region.easeIn,
+			easeOut: region.easeOut,
+			rampIn: region.rampIn,
+			rampOut: region.rampOut,
+			centerX: region.centerX,
+			centerY: region.centerY,
+			motionBlur: region.motionBlur,
+			source: region.source,
+			hidden: region.hidden ?? false,
+		})),
+	);
+	const cutsSnapshot = $derived(cuts.map((cut) => ({ ...cut })));
+	const splitPointsSnapshot = $derived([...splitPoints]);
+	// Orphaned anchors are pruned on the way out so the section diffs cleanly.
+	const segmentSpeedsSnapshot = $derived(pruneSegmentSpeeds(segmentSpeeds, currentSegments()));
+	const segmentAnimsSnapshot = $derived(pruneSegmentAnims(segmentAnims, currentSegments()));
+	const dismissedSilencesSnapshot = $derived(dismissedSilences.map((d) => ({ ...d })));
+	const annotationsSnapshot = $derived(annotations.map((annotation) => ({ ...annotation })));
+	const shadowSnapshot = $derived({ ...shadow });
+	const audioSettingsSnapshot = $derived({ ...audioSettings });
+	const musicClipsSnapshot = $derived(musicClips.map((c) => ({ ...c, source: { ...c.source } })));
+	const captionStyleSnapshot = $derived({ ...captionStyle });
+	const cameraOverlaySnapshot = $derived({
+		...cameraOverlay,
+		defaultPlacement: { ...cameraOverlay.defaultPlacement },
+		motionSegments: cameraOverlay.motionSegments.map((segment) => ({
+			...segment,
+		})),
+		keyframes: cameraOverlay.keyframes.map((k) => ({
+			atSec: k.atSec,
+			placement: { ...k.placement },
+		})),
+		clipLayouts: cameraOverlay.clipLayouts.map((c) => ({
+			start: c.start,
+			layout: { ...c.layout },
+		})),
+		layoutTransitionEasing: { ...cameraOverlay.layoutTransitionEasing },
+		keyframeEasing: { ...cameraOverlay.keyframeEasing },
+	});
+
 	function toRenderState(): EditorRenderState {
 		return {
 			trimStart,
@@ -1679,57 +1777,32 @@ export function createEditorStore() {
 			cursorClickBounce: cursorSettings.clickBounce,
 			cursorBounceSpeedMs: cursorSettings.bounceSpeedMs,
 			cursorSway: cursorSettings.sway,
-			zoomRegions: zoomRegions.map((region) => ({
-				id: region.id,
-				start: region.start,
-				end: region.end,
-				scale: region.scale,
-				easeIn: region.easeIn,
-				easeOut: region.easeOut,
-				rampIn: region.rampIn,
-				rampOut: region.rampOut,
-				centerX: region.centerX,
-				centerY: region.centerY,
-				motionBlur: region.motionBlur,
-				source: region.source,
-				hidden: region.hidden ?? false,
-			})),
+			zoomRegions: zoomRegionsSnapshot,
 			autoZoomApplied,
 			autoZoomEnabled,
-			cuts: cuts.map((cut) => ({ ...cut })),
-			splitPoints: [...splitPoints],
-			// Prune orphaned anchors on save so the section diffs cleanly.
-			segmentSpeeds: pruneSegmentSpeeds(segmentSpeeds, currentSegments()),
-			segmentAnims: pruneSegmentAnims(segmentAnims, currentSegments()),
+			cuts: cutsSnapshot,
+			splitPoints: splitPointsSnapshot,
+			segmentSpeeds: segmentSpeedsSnapshot,
+			segmentAnims: segmentAnimsSnapshot,
 			motionTone,
 			cutsEnabled,
 			focusEnabled,
 			annotationsEnabled: !annotationsGloballyHidden,
-			dismissedSilences: dismissedSilences.map((d) => ({ ...d })),
+			dismissedSilences: dismissedSilencesSnapshot,
 			cursorMotionEasing,
-			annotations: annotations.map((annotation) => ({ ...annotation })),
-			shadow: { ...shadow },
-			audioSettings: { ...audioSettings },
-			musicClips: musicClips.map((c) => ({ ...c, source: { ...c.source } })),
+			bindings,
+			transforms,
+			materials,
+			graphics,
+			vars,
+			composition,
+			annotations: annotationsSnapshot,
+			shadow: shadowSnapshot,
+			audioSettings: audioSettingsSnapshot,
+			musicClips: musicClipsSnapshot,
 			transcript,
-			captionStyle: { ...captionStyle },
-			cameraOverlay: {
-				...cameraOverlay,
-				defaultPlacement: { ...cameraOverlay.defaultPlacement },
-				motionSegments: cameraOverlay.motionSegments.map((segment) => ({
-					...segment,
-				})),
-				keyframes: cameraOverlay.keyframes.map((k) => ({
-					atSec: k.atSec,
-					placement: { ...k.placement },
-				})),
-				clipLayouts: cameraOverlay.clipLayouts.map((c) => ({
-					start: c.start,
-					layout: { ...c.layout },
-				})),
-				layoutTransitionEasing: { ...cameraOverlay.layoutTransitionEasing },
-				keyframeEasing: { ...cameraOverlay.keyframeEasing },
-			},
+			captionStyle: captionStyleSnapshot,
+			cameraOverlay: cameraOverlaySnapshot,
 			layoutMode,
 		};
 	}
@@ -1824,6 +1897,12 @@ export function createEditorStore() {
 			cameraPlacementFromPreset("bottom-right"),
 		);
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
+		bindings = state.bindings ?? [];
+		transforms = state.transforms ?? [];
+		materials = state.materials ?? [];
+		graphics = state.graphics ?? [];
+		vars = state.vars ?? [];
+		composition = state.composition;
 		layoutMode = state.layoutMode ?? layoutMode;
 		annotations = (state.annotations ?? []).map((a, idx) => ({
 			id: generateId(),
@@ -2147,6 +2226,7 @@ export function createEditorStore() {
 		},
 		outputToRenderSec,
 		renderSecToOutputSec,
+		displaySec,
 		get showCutGaps() {
 			return showCutGaps;
 		},
@@ -2262,6 +2342,9 @@ export function createEditorStore() {
 			cursorMotionEasing = v;
 		},
 
+		get vars() {
+			return vars;
+		},
 		get annotations() {
 			return annotations;
 		},
@@ -2285,6 +2368,18 @@ export function createEditorStore() {
 		},
 		set hoveredAnnotationId(v: string | null) {
 			hoveredAnnotationId = v;
+		},
+		get editingAnnotationId() {
+			return editingAnnotationId;
+		},
+		set editingAnnotationId(v: string | null) {
+			editingAnnotationId = v;
+		},
+		get engineDrawsAnnotationText() {
+			return engineDrawsAnnotationText;
+		},
+		set engineDrawsAnnotationText(v: boolean) {
+			engineDrawsAnnotationText = v;
 		},
 		get annotationsGloballyHidden() {
 			return annotationsGloballyHidden;
@@ -2494,6 +2589,7 @@ export function createEditorStore() {
 		dismissSilence,
 		clearDismissedSilences,
 		addAnnotation,
+		setVariable,
 		updateAnnotation,
 		removeAnnotation,
 		toggleAnnotationLock,

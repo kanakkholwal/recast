@@ -1,7 +1,12 @@
 #![forbid(unsafe_code)]
 #![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod bind;
+pub mod component;
+pub mod composition;
+pub mod material;
 mod scene;
+pub mod vars;
 
 pub mod migrate;
 pub mod ops;

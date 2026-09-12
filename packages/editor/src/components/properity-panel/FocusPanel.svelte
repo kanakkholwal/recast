@@ -302,7 +302,7 @@ function applyPresetToBoth(preset: Easing) {
               type="button"
               onclick={() => selectRegion(region)}
               aria-pressed={isActive}
-              aria-label={`Zoom region ${i + 1}: ${region.scale.toFixed(1)}× at ${fmtTime(region.start)}`}
+              aria-label={`Zoom region ${i + 1}: ${region.scale.toFixed(1)}× at ${fmtTime(store.displaySec(region.start))}`}
               class="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             ></button>
             <span
@@ -335,7 +335,7 @@ function applyPresetToBoth(preset: Easing) {
                   {region.scale.toFixed(2)}×
                 </span>
                 <span class="truncate text-[11px] tabular-nums text-muted-foreground">
-                  {clock(region.start)}–{clock(region.end)}
+                  {clock(store.displaySec(region.start))}–{clock(store.displaySec(region.end))}
                 </span>
               </div>
               <div class="mt-0.5 flex items-center gap-1">
@@ -437,8 +437,8 @@ function applyPresetToBoth(preset: Easing) {
             Region {selectedIndex + 1}
           </p>
           <p class="truncate text-[10px] tabular-nums text-muted-foreground">
-            {region.scale.toFixed(2)}× · {fmtTime(region.start)}–{fmtTime(
-              region.end,
+            {region.scale.toFixed(2)}× · {fmtTime(store.displaySec(region.start))}–{fmtTime(
+              store.displaySec(region.end),
             )}
           </p>
         </div>

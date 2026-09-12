@@ -497,6 +497,123 @@ export {
 	normalizeFramePaddingPercent,
 };
 
+/** One binding as the wire carries it: the layer, the property, the signal, the map and its parameters. */
+export interface LayerBinding {
+	layer: "screen" | "camera" | "annotation";
+	/** The annotation id when `layer` is `annotation`. */
+	id?: string;
+	prop: string;
+	signal: string;
+	map: string;
+	window?: [number, number];
+	[parameter: string]: unknown;
+}
+
+/** One layer's 3D transform as the wire carries it, beside its layer ref. */
+export interface LayerTransform {
+	layer: "screen" | "camera" | "annotation";
+	id?: string;
+	x?: number;
+	y?: number;
+	z?: number;
+	rx?: number;
+	ry?: number;
+	rz?: number;
+	scale?: number;
+	anchorX?: number;
+	anchorY?: number;
+	perspective?: number;
+}
+
+/** How a layer catches light. Mirrors `recast_scene::material::LayerMaterial`;
+ *  absent means unlit, which is how every project before it rendered. */
+export interface LayerMaterial {
+	layer: "screen" | "camera" | "annotation";
+	id?: string;
+	contact?: number;
+	rim?: number;
+	rimWidth?: number;
+}
+
+/** How one composition item gives way to the next. */
+export type Transition = "none" | "dissolve";
+
+/** How an image fills its box when the aspects disagree. */
+export type ItemFit = "cover" | "contain" | "fill";
+
+export type ItemContent =
+	| { kind: "image"; src: string; fit?: ItemFit; radius?: number }
+	| {
+			kind: "text";
+			content: string;
+			/** CSS family stack; empty takes whatever face the session has. */
+			font?: string;
+			/** Share of the frame height, so a title is the same size at any output resolution. */
+			size: number;
+			color: string;
+			align?: "start" | "center" | "end";
+			weight?: number;
+			lineHeight?: number;
+	  };
+
+/** One item of an authored sequence. Mirrors `recast_scene::composition::Item`;
+ *  `at` and `dur` are OUTPUT seconds, because a composition has no recording. */
+export interface CompositionItem {
+	id: string;
+	at: number;
+	dur: number;
+	/** Placement in frame fractions. Defaults to the whole frame. */
+	area?: { x: number; y: number; w: number; h: number };
+	opacity?: number;
+	content: ItemContent;
+}
+
+/** An authored composition (`<sequence>`) rather than an edited recording. */
+export interface Composition {
+	transition?: Transition;
+	transitionDur?: number;
+	items: CompositionItem[];
+}
+
+export type VarType =
+	| "color"
+	| "number"
+	| "int"
+	| "bool"
+	| "text"
+	| "select"
+	| "font"
+	| "vec2"
+	| "angle"
+	| "asset";
+
+/** One declared variable. Mirrors `recast_scene::vars::VarSpec`. `value` is text
+ *  because that is what an attribute holds and what a `$name` expands to. */
+export interface VarSpec {
+	name: string;
+	type: VarType;
+	value: string;
+	/** Inspector grouping. */
+	path?: string;
+	min?: number;
+	max?: number;
+	step?: number;
+	options?: string[];
+}
+
+/** One component instance. Mirrors `recast_scene::component::GraphicSpec`; the
+ *  registry owns what the parameters mean, so they stay text on the wire. */
+export interface GraphicSpec {
+	id: string;
+	/** `name@major.minor`, kept verbatim so a round trip cannot rewrite the pin. */
+	component: string;
+	start?: number;
+	duration?: number;
+	params?: Record<string, string>;
+	/** Where the declaring element wants it drawn when the component does not resolve. */
+	fallbackSurface?: "overlay" | "screen";
+}
+
 export interface EditorRenderState {
 	trimStart: number;
 	trimEnd: number;
@@ -585,6 +702,19 @@ export interface EditorRenderState {
 	/** Silence suggestions the user dismissed, kept so they don't resurface. */
 	dismissedSilences?: Array<{ start: number; end: number }>;
 	cursorMotionEasing: Easing | null;
+	/** Signal-driven properties by layer, declared in the v3 document (`<bind>`). No panel edits these; the engine
+	 *  samples them. Mirrors `recast_scene::bind::LayerBinding` on the wire, flattened. */
+	bindings?: LayerBinding[];
+	/** 3D transforms by layer, declared in the v3 document (`<transform>`). Same rule as bindings: carried, not edited here. */
+	transforms?: LayerTransform[];
+	/** Component instances (`<graphic>`, `<shader>`). Same rule again: the registry renders them, no panel edits them. */
+	graphics?: GraphicSpec[];
+	/** Declared variables (`<vars>`). The one carried block a panel DOES edit: references resolve before the engine sees anything. */
+	vars?: VarSpec[];
+	/** An authored sequence (`<sequence>`). Present instead of a recording, never alongside one. */
+	composition?: Composition;
+	/** Per-layer lighting (`<material>`). Carried, not edited by a panel. */
+	materials?: LayerMaterial[];
 	/** `id` included: Rust's `Annotation.id` has no `#[serde(default)]`, and a
 	 *  missing one fails the WHOLE RenderState deserialize, not just that entry. */
 	annotations: Annotation[];

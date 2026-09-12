@@ -16,6 +16,7 @@ export interface OverlayControlProps {
   import { ImagePlus, Trash2 } from "@recast/icons";
   import { imageFromFile } from "../image-input";
   import { OVERLAY_SHADOWS } from "../image-backgrounds";
+  import { CARD_IDLE, CARD_SELECTED, SWATCH_SELECTED } from "../selection";
   import type { ImageOverlay } from "../types";
 
   let { editor }: OverlayControlProps = $props();
@@ -117,10 +118,10 @@ export interface OverlayControlProps {
     <button
       type="button"
       class={cn(
-        "border-border text-muted-foreground flex aspect-square items-center justify-center rounded-lg border text-xs font-medium transition-colors",
+        "flex aspect-square items-center justify-center rounded-lg border text-xs font-medium transition-colors",
         editor.shadowOverlay
-          ? "hover:bg-accent"
-          : "border-foreground/40 text-foreground ring-1 ring-inset ring-foreground/20",
+          ? cn("text-muted-foreground", CARD_IDLE)
+          : cn("text-foreground", CARD_SELECTED),
       )}
       aria-pressed={!editor.shadowOverlay}
       onclick={() => editor.setShadowOverlay(null)}
@@ -133,7 +134,7 @@ export interface OverlayControlProps {
         type="button"
         class={cn(
           "border-border bg-muted aspect-square overflow-hidden rounded-lg border transition-transform hover:scale-105",
-          active && "ring-foreground/60 ring-2 ring-offset-1",
+          active && SWATCH_SELECTED,
         )}
         aria-label={shadow.id}
         aria-pressed={active}

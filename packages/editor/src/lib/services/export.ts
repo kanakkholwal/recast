@@ -31,6 +31,8 @@ import {
 import { toOutputTimeTranscript } from "../captions/output-time";
 import { rasterizeCursorSprites } from "../export/rasterize-cursor";
 import { expandTextAnnotations } from "../export/rasterize-text";
+import { resolveEngineFont } from "../fonts/engine-font";
+import { engineCanShapeText } from "../fonts/text-annotation-faces";
 import type { Transcript } from "../wire-types";
 
 /** Optional progress hooks for the hybrid-raster "Preparing…" phase. Each fires
@@ -40,6 +42,8 @@ export interface ExportPrepHooks {
 	onText?(status: "running" | "done"): void;
 	onCursor?(status: "running" | "done"): void;
 	onSending?(status: "running" | "done"): void;
+	/** Text that could not be rasterised and is missing from the export. */
+	onTextDropped?(contents: string[]): void;
 }
 
 export interface BuildExportRenderStateOptions {
@@ -48,6 +52,10 @@ export interface BuildExportRenderStateOptions {
 	 *  composites those itself, and the mux job never reads them — so doing it here
 	 *  too is pure double work. Audio/cuts/speed/metadata are unaffected. */
 	skipVisualRaster?: boolean;
+	/** True when the ENGINE will render this export. It shapes text itself, so
+	 *  rasterising first would hand it a picture of the words instead, drawn by a
+	 *  different shaper than the preview used. */
+	engineExport?: boolean;
 }
 
 export interface ExportRenderStatePayload {
@@ -66,7 +74,7 @@ export async function buildExportRenderState(
 	store: EditorStore,
 	opts: BuildExportRenderStateOptions = {},
 ): Promise<ExportRenderStatePayload> {
-	const { hooks, skipVisualRaster } = opts;
+	const { hooks, skipVisualRaster, engineExport } = opts;
 	const renderState = store.toRenderState();
 	const meta = store.metadata;
 
@@ -87,14 +95,23 @@ export async function buildExportRenderState(
 	const canvasW = meta ? meta.width + paddingPx * 2 : 0;
 	const canvasH = meta ? meta.height + paddingPx * 2 : 0;
 
-	const hasText = renderState.annotations.some((a) => a.kind.kind === "text");
+	// The engine shapes text only if the native exporter finds every face; otherwise the DOM's pixels travel.
+	const engineShapesText =
+		engineExport && (await engineCanShapeText(renderState.annotations, resolveEngineFont));
+	const rasterisesText = !engineShapesText;
+	const hasText = rasterisesText && renderState.annotations.some((a) => a.kind.kind === "text");
 	const hasStyledCursor = store.cursorSettings.style !== "dot";
 	hooks?.onText?.(hasText ? "running" : "done");
 	hooks?.onCursor?.(hasStyledCursor ? "running" : "done");
 
 	// Independent, and the cursor SVG decode is non-trivial cold, since Image() onload is async even for blobs.
 	const [expandedAnnotations, cursorSprites] = await Promise.all([
-		expandTextAnnotations(renderState.annotations, canvasW, canvasH).then((r) => {
+		(rasterisesText
+			? expandTextAnnotations(renderState.annotations, canvasW, canvasH, (dropped) =>
+					hooks?.onTextDropped?.(dropped),
+				)
+			: Promise.resolve(renderState.annotations)
+		).then((r) => {
 			hooks?.onText?.("done");
 			return r;
 		}),

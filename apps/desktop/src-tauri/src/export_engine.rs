@@ -26,6 +26,13 @@ pub fn enabled(requested: bool) -> bool {
     engine_opt_in(requested, std::env::var(ENGINE_EXPORT_ENV).ok().as_deref())
 }
 
+/// Whether `RECAST_ENGINE_EXPORT=0` forbids the engine outright. A project the graph
+/// cannot draw then has no correct export at all, so it is refused, not routed.
+#[must_use]
+pub fn forced_off() -> bool {
+    std::env::var(ENGINE_EXPORT_ENV).ok().as_deref() == Some("0")
+}
+
 /// Bits per pixel per frame for H.264. 0.08 is the usual "visually clean screen
 /// content" figure; the engine encoder takes a rate where FFmpeg took a CRF.
 const BITS_PER_PIXEL: f64 = 0.08;
@@ -93,6 +100,10 @@ pub enum EngineExportError {
     Audio(String),
     #[error("the export was cancelled")]
     Cancelled,
+    /// Words the scene draws with no face anywhere. Shipping them would be blank text, and the
+    /// graph cannot draw them either, so this refuses by name instead of falling back.
+    #[error("no font could be found for {0}; install it or pick another font")]
+    MissingFont(String),
     /// The scene needs something this path cannot do. The caller falls back to
     /// FFmpeg rather than shipping output that disagrees with the preview.
     #[error("the engine cannot export this scene: {0}")]
@@ -309,15 +320,12 @@ pub fn burn_in_for(state: &RenderState, burn: bool) -> Option<CaptionTrack> {
 ///
 /// One that will not decode is skipped rather than fatal, which is what the
 /// FFmpeg graph does: a single unreadable overlay must not lose a good export.
-fn upload_annotation_images(
+fn upload_images(
     ctx: &recast_gpu::GpuContext,
-    state: &RenderState,
+    paths: &[String],
 ) -> Vec<(String, wgpu::TextureView)> {
     let mut uploaded: Vec<(String, wgpu::TextureView)> = Vec::new();
-    for annotation in &state.annotations {
-        let recast_scene::v1::nodes::AnnotationKind::Image { path, .. } = &annotation.kind else {
-            continue;
-        };
+    for path in paths {
         if path.is_empty() || uploaded.iter().any(|(seen, _)| seen == path) {
             continue;
         }
@@ -326,7 +334,7 @@ fn upload_annotation_images(
                 path.clone(),
                 texture.create_view(&wgpu::TextureViewDescriptor::default()),
             )),
-            Err(e) => log::warn!("engine export: image annotation {path}: {e}"),
+            Err(e) => log::warn!("engine export: image {path}: {e}"),
         }
     }
     uploaded
@@ -428,6 +436,25 @@ pub struct ExportSpec<'a> {
     /// The camera recording and how far it lags the screen, in seconds. The
     /// bubble is a separate file composited at export, not part of the capture.
     pub camera: Option<(&'a Path, f64)>,
+    /// Faces for the scene's words, resolved the way the preview resolves them. `None`
+    /// leaves the session to the machine's own fonts.
+    pub faces: Option<&'a SuppliedFaces>,
+}
+
+/// Faces the host resolved for the words this scene draws, and the fallback for any it could not.
+#[derive(Debug, Default)]
+pub struct SuppliedFaces {
+    /// What an unnamed family, or one no face was found for, draws with.
+    pub fallback: Option<Vec<u8>>,
+    pub faces: Vec<SuppliedFace>,
+}
+
+/// One face, keyed by the stack and weight the text names it by.
+#[derive(Debug)]
+pub struct SuppliedFace {
+    pub stack: String,
+    pub weight: u16,
+    pub data: Vec<u8>,
 }
 
 /// Whether the engine writes a finished file on this platform, or an
@@ -569,8 +596,18 @@ pub fn export_video(
 
     let mut session = Session::new(ctx, to_scene(state), source)
         .map_err(|e| EngineExportError::Session(e.to_string()))?;
+    // The fallback is what an unnamed family, or one no face was found for, draws with.
+    let fallback_set = spec
+        .faces
+        .and_then(|faces| faces.fallback.clone())
+        .is_some_and(|bytes| session.set_caption_font(bytes, 0));
+    for face in spec.faces.map_or(&[][..], |faces| faces.faces.as_slice()) {
+        if !session.set_text_font(&face.stack, face.weight, face.data.clone(), 0) {
+            log::warn!("engine export: {} is not a readable face", face.stack);
+        }
+    }
     if let Some(captions) = captions {
-        let mut supplied = false;
+        let mut supplied = fallback_set;
         if let Some(path) = &captions.font {
             match std::fs::read(path) {
                 Ok(bytes) => {
@@ -638,7 +675,11 @@ pub fn export_video(
         Some(path) => Some(upload_background(ctx, &path)?),
         None => None,
     };
-    let annotation_images = upload_annotation_images(ctx, state);
+    let missing = session.unshapeable_faces();
+    if !missing.is_empty() {
+        return Err(EngineExportError::MissingFont(missing.join(", ")));
+    }
+    let annotation_images = upload_images(ctx, &session.wanted_images());
     // The view outlives the borrow `Extras` takes, so it is built before the loop.
     let background_view = background.as_ref().map(|(texture, w, h)| {
         (
@@ -1089,6 +1130,7 @@ mod live {
     /// encoder is not a variable.
     fn spec<'a>(input: &'a Path, output: &'a Path) -> ExportSpec<'a> {
         ExportSpec {
+            faces: None,
             input,
             output,
             fps: (30, 1),
@@ -1473,6 +1515,241 @@ mod live {
             delta.drew_something(DRAWN),
             "the camera recording never reached the frame loop ({delta:?})"
         );
+    }
+
+    /// Exports the same take twice, the second with `change` on top of `prepare`, and
+    /// returns how the files differ. `None` where no GPU can render them.
+    fn export_pair(
+        label: &str,
+        prepare: impl FnOnce(&mut RenderState, &Path),
+        change: impl FnOnce(&mut RenderState, &Path),
+    ) -> Option<crate::export_parity::Delta> {
+        let ctx = context()?;
+        let _serial = exclusive();
+        let scratch = Scratch::new(label);
+        let input = scratch.0.join("in.mp4");
+        record(&ctx, &input, 0.2);
+
+        let mut base = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        prepare(&mut base, &scratch.0);
+        let plain_out = scratch.0.join("plain.mp4");
+        export_video(&base, &spec(&input, &plain_out), &mut never_cancels).expect("plain export");
+
+        let mut changed = base.clone();
+        change(&mut changed, &scratch.0);
+        let changed_out = scratch.0.join("changed.mp4");
+        if let Err(e) = export_video(&changed, &spec(&input, &changed_out), &mut never_cancels) {
+            panic!("{label}: the engine export failed: {e}");
+        }
+        Some(
+            crate::export_parity::compare_files(&plain_out, &changed_out)
+                .expect("both files decode"),
+        )
+    }
+
+    /// A layer drawn over part of the frame: enough pixels must visibly change.
+    fn assert_drawn(
+        label: &str,
+        prepare: impl FnOnce(&mut RenderState, &Path),
+        change: impl FnOnce(&mut RenderState, &Path),
+    ) {
+        if let Some(delta) = export_pair(label, prepare, change) {
+            assert!(
+                delta.drew_something(DRAWN),
+                "{label} never reached the exported picture ({delta:?})"
+            );
+        }
+    }
+
+    fn screen_transform(ry: f64) -> Vec<recast_scene::bind::LayerTransform> {
+        vec![serde_json::from_value(serde_json::json!({
+            "layer": "screen", "x": 0.0, "y": 0.0, "z": 0.1, "rx": 0.0, "ry": ry, "rz": 0.0,
+            "scale": 1.0, "anchorX": 0.5, "anchorY": 0.5, "perspective": 2.0
+        }))
+        .expect("transform")]
+    }
+
+    /// The graph has no homography, so a tilted card is exactly what an FFmpeg export lost.
+    #[test]
+    fn a_3d_transform_reaches_the_exported_picture() {
+        assert_drawn(
+            "transform",
+            |_, _| {},
+            |state, _| state.transforms = screen_transform(35.0),
+        );
+    }
+
+    /// Both exports are tilted, so only the light differs. Shading moves every pixel a
+    /// little rather than some a lot, so it is the mean that must clear encoder noise.
+    #[test]
+    fn a_material_reaches_the_exported_picture() {
+        let delta = export_pair(
+            "material",
+            |state, _| state.transforms = screen_transform(35.0),
+            |state, _| {
+                state.materials = vec![serde_json::from_value(serde_json::json!({
+                    "layer": "screen", "contact": 1.0, "rim": 1.0, "rimWidth": 0.5
+                }))
+                .expect("material")];
+            },
+        );
+        if let Some(delta) = delta {
+            assert!(
+                !delta.agrees_within(LAYOUT_SAME),
+                "the material never reached the exported picture ({delta:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn a_component_reaches_the_exported_picture() {
+        assert_drawn(
+            "component",
+            |_, _| {},
+            |state, _| {
+                state.graphics = vec![serde_json::from_value(serde_json::json!({
+                    "id": "g1", "component": "spotlight@1.0", "start": 0.0, "duration": 10.0,
+                    "params": { "strength": "0.9", "radius": "0.15" }, "fallbackSurface": "overlay"
+                }))
+                .expect("graphic")];
+            },
+        );
+    }
+
+    /// A binding is evaluated per frame, so no static read of the state can prove it: only a render can.
+    #[test]
+    fn a_binding_reaches_the_exported_picture() {
+        let doc = recast_project::parse(
+            r#"<recast v="3"><timeline in="0" out="0.2"/><screen id="scr"><bind id="b1" prop="opacity" src="time" map="wave" from="0.1" to="0.1" period="2"/></screen></recast>"#,
+        )
+        .expect("parse");
+        let bindings = recast_project::scene::to_render_state(&doc)
+            .expect("map")
+            .bindings;
+        assert_drawn(
+            "binding",
+            |_, _| {},
+            move |state, _| state.bindings = bindings,
+        );
+    }
+
+    /// A composition draws its own items instead of the recording, so its images must reach the frame loop too.
+    #[test]
+    fn a_composition_reaches_the_exported_picture() {
+        assert_drawn(
+            "composition",
+            |_, _| {},
+            |state, dir| {
+                let slide = dir.join("slide.png");
+                let mut pixels = image::RgbaImage::new(64, 64);
+                for pixel in pixels.pixels_mut() {
+                    *pixel = image::Rgba([255, 0, 255, 255]);
+                }
+                pixels.save(&slide).expect("the slide writes");
+                state.composition = Some(
+                    serde_json::from_value(serde_json::json!({
+                        "items": [{ "id": "i1", "at": 0.0, "dur": 0.2,
+                            "content": { "kind": "image", "src": slide.to_string_lossy(), "fit": "cover" } }]
+                    }))
+                    .expect("composition"),
+                );
+            },
+        );
+    }
+
+    fn text_annotation(stack: &str) -> recast_scene::v1::nodes::Annotation {
+        serde_json::from_value(serde_json::json!({
+            "id": "t1", "start": 0.0, "end": 10.0,
+            "kind": { "kind": "text", "x": 0.1, "y": 0.1, "w": 0.8, "h": 0.5, "content": "MMMM",
+                      "fontFamily": stack, "fontSize": 0.4, "fontWeight": 700, "color": "#ff00ff",
+                      "align": "center", "lineHeight": 1.2 }
+        }))
+        .expect("text annotation")
+    }
+
+    fn installed_face() -> Option<Vec<u8>> {
+        ["Segoe UI", "Arial", "DejaVu Sans", "Helvetica"]
+            .into_iter()
+            .find_map(|family| recast_compositor::faces::installed_font_bytes(family, 700))
+    }
+
+    /// A family the machine does not have draws only if the host supplied its bytes, which
+    /// is how the app's default webfont reaches the file.
+    #[test]
+    fn a_supplied_face_draws_text_the_machine_has_no_font_for() {
+        let Some(ctx) = context() else { return };
+        let Some(bytes) = installed_face() else {
+            return;
+        };
+        let _serial = exclusive();
+        let scratch = Scratch::new("supplied-face");
+        let input = scratch.0.join("in.mp4");
+        record(&ctx, &input, 0.2);
+        let base = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        let plain_out = scratch.0.join("plain.mp4");
+        export_video(&base, &spec(&input, &plain_out), &mut never_cancels).expect("plain export");
+
+        let stack = "'Nonexistent Webfont Variable', sans-serif";
+        let mut texted = base.clone();
+        texted.annotations = vec![text_annotation(stack)];
+        let supplied = SuppliedFaces {
+            fallback: None,
+            faces: vec![SuppliedFace {
+                stack: stack.to_owned(),
+                weight: 700,
+                data: bytes,
+            }],
+        };
+        let texted_out = scratch.0.join("texted.mp4");
+        let mut with_faces = spec(&input, &texted_out);
+        with_faces.faces = Some(&supplied);
+        export_video(&texted, &with_faces, &mut never_cancels).expect("text export");
+
+        let delta = crate::export_parity::compare_files(&plain_out, &texted_out)
+            .expect("both files decode");
+        assert!(
+            delta.drew_something(DRAWN),
+            "the supplied face never drew ({delta:?})"
+        );
+    }
+
+    /// No face anywhere used to export blank words without a sound; it refuses by name now.
+    #[test]
+    fn text_with_no_face_anywhere_is_refused_by_name_rather_than_left_blank() {
+        let Some(ctx) = context() else { return };
+        let _serial = exclusive();
+        let scratch = Scratch::new("no-face");
+        let input = scratch.0.join("in.mp4");
+        record(&ctx, &input, 0.2);
+        let mut state = RenderState {
+            trim_start: 0.0,
+            trim_end: 0.2,
+            cursor_enabled: false,
+            ..Default::default()
+        };
+        state.annotations = vec![text_annotation("'Nonexistent Webfont Variable'")];
+        let mut style = state.caption_style.clone().unwrap_or_default();
+        style.font_family = "Nonexistent Fallback".into();
+        state.caption_style = Some(style);
+        let out = scratch.0.join("out.mp4");
+
+        match export_video(&state, &spec(&input, &out), &mut never_cancels) {
+            Err(EngineExportError::MissingFont(names)) => {
+                assert!(names.contains("Nonexistent Webfont Variable"), "{names}");
+            }
+            Err(e) => panic!("expected a refusal by font name, got: {e}"),
+            Ok(_) => panic!("exported blank words instead of refusing"),
+        }
     }
 
     /// Fraction of a frame that has to change VISIBLY before a layer counts as
@@ -1923,6 +2200,7 @@ mod live {
         export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 captions: Some(&burn),
                 ..spec(&input, &captioned)
             },
@@ -2030,6 +2308,7 @@ mod live {
         export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 max_size: Some((320, 180)),
                 // Derived, so a cap that shrinks the frame also lowers the rate.
                 bitrate: None,
@@ -2073,6 +2352,7 @@ mod live {
         export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 audio: false,
                 ..spec(&input, &output)
             },
@@ -2114,6 +2394,7 @@ mod live {
         let report = export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 force_ffmpeg: true,
                 time_map: None,
                 cursor_track: None,
@@ -2180,6 +2461,7 @@ mod live {
         export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 audio: false,
                 ..spec(&input, &native_out)
             },
@@ -2189,6 +2471,7 @@ mod live {
         export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 force_ffmpeg: true,
                 time_map: None,
                 cursor_track: None,
@@ -2245,6 +2528,7 @@ mod live {
         let error = export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 force_ffmpeg: true,
                 time_map: None,
                 cursor_track: None,
@@ -2276,6 +2560,7 @@ mod live {
         let error = export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 force_ffmpeg: true,
                 time_map: None,
                 cursor_track: None,
@@ -2334,6 +2619,7 @@ mod live {
         export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 audio_sources: crate::export_audio::RecordingAudio {
                     video: Some(&input),
                     microphone: Some(&mic),
@@ -2393,6 +2679,7 @@ mod live {
         let report = export_video(
             &state,
             &ExportSpec {
+                faces: None,
                 max_size: Some((302, 400)),
                 bitrate: None,
                 ..spec(&input, &output)

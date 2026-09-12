@@ -30,6 +30,8 @@ pub struct Session {
     /// The caption face and the glyphs packed from it. Held across frames
     /// because re-rasterising a line every frame is the whole cost.
     caption_face: Option<CaptionFace>,
+    /// Every face this session draws with, and the ids the atlas keys them by.
+    faces: crate::faces::Faces,
     /// Rasterised glyphs, held here because this session's compositor is the
     /// one that mirrors them. See `Compositor::sync_glyph_atlas`.
     atlas: GlyphAtlas,
@@ -55,6 +57,7 @@ impl Session {
             evaluator,
             compositor: Compositor::new(ctx)?,
             caption_face: None,
+            faces: crate::faces::Faces::new(),
             atlas: GlyphAtlas::new(ATLAS_WIDTH, ATLAS_MAX_HEIGHT),
             output: None,
             output_allocations: 0,
@@ -167,14 +170,15 @@ impl Session {
     /// rasterise. The host hands the result back through `FrameInputs`, the way
     /// it hands over sprites and annotation images.
     pub fn caption_frame(&mut self, output_time: f64) -> CaptionFrame {
+        let mut frame = self.composition_frame(output_time);
         let Some(style) = self.scene.captions.clone() else {
-            return CaptionFrame::default();
+            return frame;
         };
         let Some(track) = self.scene.caption_track.clone() else {
-            return CaptionFrame::default();
+            return frame;
         };
         let Some(face) = self.caption_face_for(&style) else {
-            return CaptionFrame::default();
+            return frame;
         };
 
         let params = self.evaluator.evaluate(&self.scene, output_time);
@@ -187,7 +191,7 @@ impl Session {
             output: output_time,
             time_map: self.evaluator.time_map(),
         };
-        let frame = layout_caption(
+        let caption = layout_caption(
             &style,
             &track,
             clock,
@@ -197,8 +201,72 @@ impl Session {
             0,
             &mut self.atlas,
         );
+        frame.pill = caption.pill;
+        frame.glyphs.extend(caption.glyphs);
         self.compositor.sync_glyph_atlas(&mut self.atlas);
         frame
+    }
+
+    /// The words annotations carry, shaped through the same faces and atlas.
+    /// They draw in their own pass, with the annotations, so a text annotation
+    /// keeps the z order its author gave it.
+    pub fn annotation_glyphs(&mut self, output_time: f64) -> Vec<crate::text::GlyphQuad> {
+        let items = self
+            .evaluator
+            .evaluate(&self.scene, output_time)
+            .annotation_text;
+        if items.is_empty() {
+            return Vec::new();
+        }
+        let fallback = self.text_face();
+        self.faces.set_host(fallback);
+        let glyphs = crate::item_text::layout_items(&items, &mut self.faces, &mut self.atlas);
+        self.compositor.sync_glyph_atlas(&mut self.atlas);
+        glyphs
+    }
+
+    /// A face the host resolved for `family` at `weight`. The browser has no font
+    /// database, so a text annotation or a composition item that names a family
+    /// draws in it only when the host supplies it. False when the bytes are not
+    /// a face this build can read, leaving whatever was there in place.
+    pub fn set_text_font(&mut self, family: &str, weight: u16, data: Vec<u8>, index: u32) -> bool {
+        let Some(face) = FontFace::from_bytes(std::sync::Arc::new(data), index) else {
+            return false;
+        };
+        self.faces.insert(family, weight, face);
+        true
+    }
+
+    /// Names the annotation whose words the host is drawing itself, because it
+    /// has a caret in them. Everything else about that annotation still renders.
+    pub fn set_editing_annotation(&mut self, id: Option<String>) {
+        self.evaluator.set_editing(id);
+    }
+
+    /// Every word this frame that is not a caption or an annotation: a
+    /// composition's titles and the components that carry text. They ride in the
+    /// caption frame because they draw in its pass, through the same faces.
+    fn composition_frame(&mut self, output_time: f64) -> CaptionFrame {
+        let items = self.evaluator.evaluate(&self.scene, output_time).text_draws;
+        if items.is_empty() {
+            return CaptionFrame::default();
+        }
+        // Each item resolves its own family; the session's face is the fallback.
+        let fallback = self.text_face();
+        self.faces.set_host(fallback);
+        let glyphs = crate::item_text::layout_items(&items, &mut self.faces, &mut self.atlas);
+        self.compositor.sync_glyph_atlas(&mut self.atlas);
+        CaptionFrame { pill: None, glyphs }
+    }
+
+    /// The face a composition's text draws with: the host's if it set one, else
+    /// the caption style's. A composition has one face, not one per item.
+    fn text_face(&mut self) -> Option<FontFace> {
+        if let Some(CaptionFace::Host(face)) = &self.caption_face {
+            return Some(face.clone());
+        }
+        let style = self.scene.captions.clone().unwrap_or_default();
+        self.caption_face_for(&style)
     }
 
     /// The face for this style, resolving it the first time and again whenever
@@ -216,6 +284,45 @@ impl Session {
         // Same glyph ids, different outlines.
         self.atlas.reset();
         resolved
+    }
+
+    /// Every face this scene's words ask for, for a host that resolves fonts itself.
+    #[must_use]
+    pub fn wanted_faces(&self) -> Vec<crate::host_needs::FaceRequest> {
+        crate::host_needs::wanted_faces(&self.scene)
+    }
+
+    /// Every image file this scene draws: annotation images and composition slides.
+    #[must_use]
+    pub fn wanted_images(&self) -> Vec<String> {
+        crate::host_needs::wanted_images(&self.scene)
+    }
+
+    /// The face an unnamed family, or one no face was found for, draws with.
+    #[must_use]
+    pub fn fallback_face_request(&self) -> crate::host_needs::FaceRequest {
+        crate::host_needs::fallback_face(&self.scene)
+    }
+
+    /// Families this scene's words would draw with no face at all, named for a refusal.
+    pub fn unshapeable_faces(&mut self) -> Vec<String> {
+        let fallback = self.text_face();
+        self.faces.set_host(fallback);
+        let mut missing: Vec<String> = Vec::new();
+        for want in crate::host_needs::wanted_faces(&self.scene) {
+            if self.faces.face_for(&want.stack, want.weight).is_some() {
+                continue;
+            }
+            let name = if want.stack.is_empty() {
+                "the default font".to_owned()
+            } else {
+                want.stack
+            };
+            if !missing.contains(&name) {
+                missing.push(name);
+            }
+        }
+        missing
     }
 
     pub fn render(

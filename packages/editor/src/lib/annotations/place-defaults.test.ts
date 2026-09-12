@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { clickPlacedArrow, clickPlacedBox } from "./place-defaults";
+import { evalOpacity } from "./eval";
+import { clickPlacedArrow, clickPlacedBox, placedTimeRange } from "./place-defaults";
 
 const WIDE = { w: 1920, h: 1080 };
 const TALL = { w: 1080, h: 1920 };
@@ -69,5 +70,68 @@ describe("clickPlacedArrow", () => {
 				}
 			}
 		}
+	});
+});
+
+const RAMP = 0.2;
+
+function opacityAt(start: number, end: number, t: number): number {
+	return evalOpacity(
+		{
+			start,
+			end,
+			rampIn: RAMP,
+			rampOut: RAMP,
+			easeIn: { x1: 0, y1: 0, x2: 1, y2: 1 },
+			easeOut: { x1: 0, y1: 0, x2: 1, y2: 1 },
+		} as Parameters<typeof evalOpacity>[0],
+		t,
+	);
+}
+
+describe("placedTimeRange", () => {
+	/** The reported bug: a 200 ms fade at the playhead left nothing on screen where it was placed. */
+	it("puts the fade before the playhead so the annotation is up where it was placed", () => {
+		const { start, end } = placedTimeRange(10, 0, 60, 0.2);
+
+		expect(start).toBeCloseTo(9.8, 6);
+		expect(end).toBeCloseTo(11.8, 6);
+	});
+
+	it("keeps the start at the playhead when there is no fade to lead in", () => {
+		expect(placedTimeRange(10, 0, 60, 0)).toEqual({ start: 10, end: 12 });
+	});
+
+	it("cannot start before the trim, where the fade has nowhere to go", () => {
+		const { start } = placedTimeRange(5, 5, 60, 0.2);
+
+		expect(start).toBe(5);
+	});
+
+	it("takes the last stretch of the clip when the playhead is at the very end", () => {
+		expect(placedTimeRange(60, 0, 60, 0.2)).toEqual({ start: 58, end: 60 });
+	});
+
+	it("gives the whole clip to an annotation that cannot fit in it", () => {
+		expect(placedTimeRange(0.5, 0, 1, 0.2)).toEqual({ start: 0, end: 1 });
+	});
+
+	/** The range is a means; being ON SCREEN where it was placed is the point. */
+	it("is fully opaque at the playhead it was placed at", () => {
+		const at = 10;
+		const { start, end } = placedTimeRange(at, 0, 60, RAMP);
+
+		expect(opacityAt(start, end, at)).toBe(1);
+	});
+
+	/**
+	 * Placed on the last frame there is nowhere to put a fade-out, so it is still
+	 * ramping down at the playhead. Nothing can fix that without running past the clip.
+	 */
+	it("cannot be opaque when placed on the very last frame", () => {
+		const { start, end } = placedTimeRange(60, 0, 60, RAMP);
+
+		expect(opacityAt(start, end, 60)).toBe(0);
+		expect(opacityAt(start, end, 59)).toBe(1);
 	});
 });

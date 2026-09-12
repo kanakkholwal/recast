@@ -30,7 +30,6 @@ import { analytics } from "$lib/analytics/client";
 import type {
 	AuthStartResult,
 	AuthStatus,
-	AutosaveState,
 	CameraDeviceInfo,
 	CameraPreviewState,
 	CameraValidationResult,
@@ -114,7 +113,6 @@ export type {
 	AuthStartResult,
 	AuthStatus,
 	AuthUsage,
-	AutosaveState,
 	CameraDeviceInfo,
 	CameraPreviewState,
 	CameraValidationResult,
@@ -491,9 +489,28 @@ export function loadEditorDocument(path: string): Promise<EditorDocument> {
 	return invoke<EditorDocument>("load_editor_document", { path });
 }
 
-/** Re-pack a legacy `.recast` to the current format in place (keeps a `.bak`). */
+/** Convert a `.recast` archive into a project folder at the same path, keeping the archive as `.bak`. */
 export function migrateProject(projectPath: string): Promise<void> {
 	return invoke<void>("migrate_project", { projectPath });
+}
+
+/**
+ * Persist a whole render state into the project as one sequenced batch. The editor
+ * commits through its document replica; this is the path when that replica could
+ * not open, and the one headless writers use.
+ */
+export function saveProjectEdits(projectPath: string, editsJson: string): Promise<number> {
+	return invoke<number>("save_project_edits", { projectPath, editsJson });
+}
+
+/** Pack a project folder into a single `.recast` archive. The project stays a folder. */
+export function exportProjectArchive(projectPath: string, destPath: string): Promise<string> {
+	return invoke<string>("export_project_archive", { projectPath, destPath });
+}
+
+/** Copy a `.recast` archive into the recordings folder and convert it to a project there. */
+export function importProjectArchive(archivePath: string): Promise<string> {
+	return invoke<string>("import_project_archive", { archivePath });
 }
 
 export function generateThumbnails(path: string, count: number): Promise<string[]> {
@@ -545,15 +562,11 @@ export function enqueueExport(req: EnqueueExportRequest): Promise<string[]> {
 		speed: req.speed ?? "balanced",
 		fps: req.fps ?? "source",
 	});
+	// Spread, not a field list: a hand-copied list dropped `engineExport`, so every editor export ran on FFmpeg.
 	return invoke<string[]>("enqueue_export", {
 		request: {
-			exportId: req.exportId,
-			inputPath: req.inputPath,
-			format: req.format,
-			quality: req.quality,
+			...req,
 			speed: req.speed ?? "balanced",
-			renderState: req.renderState,
-			gifSettings: req.gifSettings,
 			fps: req.fps ?? null,
 			burnCaptions: req.burnCaptions ?? false,
 			captionSidecar: req.captionSidecar ?? null,
@@ -667,6 +680,20 @@ export function ensureGoogleFont(family: string, weight: number): Promise<string
 }
 
 /** The same family's TTF. The engine's shaper cannot read the woff2 above. */
+export async function installedFontBytes(
+	family: string,
+	weight: number,
+): Promise<Uint8Array | null> {
+	const bytes = await invoke<number[] | null>("system_font_bytes", { family, weight });
+	return bytes ? new Uint8Array(bytes) : null;
+}
+
+/** Bytes the engine shapes `stack` with, resolved exactly as the native export resolves them. */
+export async function engineFontBytes(stack: string, weight: number): Promise<Uint8Array | null> {
+	const bytes = await invoke<number[] | null>("engine_font_bytes", { stack, weight });
+	return bytes ? new Uint8Array(bytes) : null;
+}
+
 export function captionFontFile(family: string, weight: number): Promise<string> {
 	return invoke<string>("caption_font_file", { family, weight });
 }
@@ -800,28 +827,6 @@ export function setRemoteAsrKey(id: string, key: string): Promise<void> {
 	return invoke("set_remote_asr_key", { id, key });
 }
 
-// Autosave / Recovery commands
-
-export function autosaveProject(projectPath: string, editsJson: string): Promise<void> {
-	return invoke("autosave_project", { projectPath, editsJson });
-}
-
-/**
- * Persist the current edits back into the `.recast` archive. Returns the
- * save timestamp (unix ms) so the UI can show "Saved at HH:MM".
- */
-export function saveProjectEdits(projectPath: string, editsJson: string): Promise<number> {
-	return invoke<number>("save_project_edits", { projectPath, editsJson });
-}
-
-export function clearAutosave(projectPath: string): Promise<void> {
-	return invoke("clear_autosave", { projectPath });
-}
-
-export function getRecoverableSessions(): Promise<AutosaveState[]> {
-	return invoke<AutosaveState[]>("get_recoverable_sessions");
-}
-
 // External asset cache
 
 export function ensureAssetsInstalled(manifestUrl: string): Promise<AssetInstallResult> {
@@ -863,6 +868,11 @@ export function uninstallExtension(extId: string): Promise<void> {
 /** Fetch a curated registry *index* (no install) for the gallery. */
 export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T> {
 	return invoke<T>("fetch_extension_registry", { indexUrl });
+}
+
+/** A remote pack asset's bytes, fetched by the core (the release CSP blocks the webview from doing it). */
+export async function fetchExtensionAsset(url: string): Promise<Uint8Array> {
+	return new Uint8Array(await invoke<number[] | ArrayBuffer>("fetch_extension_asset", { url }));
 }
 
 export async function launchRecordingPanel(intent?: CaptureIntent) {
@@ -968,6 +978,15 @@ export function getNativeEncoder(): Promise<boolean> {
 
 export function setNativeEncoder(enabled: boolean): Promise<void> {
 	return invoke<void>("set_native_encoder", { enabled });
+}
+
+/** Whether an agent may land ops on the open project directly (one undo step each) instead of proposing on a branch. */
+export function getAgentLiveApply(): Promise<boolean> {
+	return invoke<boolean>("get_agent_live_apply");
+}
+
+export function setAgentLiveApply(enabled: boolean): Promise<void> {
+	return invoke<void>("set_agent_live_apply", { enabled });
 }
 
 /** Whether this machine can honour the native writer (Windows + an MF H.264

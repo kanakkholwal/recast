@@ -116,6 +116,12 @@ export interface AssetService {
 	 *  neither woff2 nor a `FontFace`, so it needs the file itself. Absent on a
 	 *  host with no TTF cache, where engine captions fall back to the default. */
 	captionFontFile?(family: string, weight: number): Promise<string>;
+	/** The bytes of an INSTALLED family, which a browser can never fetch. Absent
+	 *  on a host with no font database, where text it names is drawn by the DOM. */
+	installedFontBytes?(family: string, weight: number): Promise<Uint8Array | null>;
+	/** Bytes the engine shapes `stack` at `weight` with, resolved on the host exactly as the
+	 *  export resolves them: an installed face first, else the Google family. */
+	engineFontBytes?(stack: string, weight: number): Promise<Uint8Array | null>;
 	ensureInstalled(manifestUrl: string): Promise<AssetInstallResult>;
 	getCachedPath(id: string): Promise<string | null>;
 	hydrate(): Promise<HydratedAsset[]>;
@@ -124,6 +130,8 @@ export interface AssetService {
 /** Asset-pack install. Absent ⇒ the Extensions panel is read-only. */
 export interface ExtensionService {
 	fetchRegistry<T = unknown>(indexUrl: string): Promise<T>;
+	/** Bytes of one remote pack asset, for previews the webview cannot load directly. Absent: previews use the URL as is. */
+	fetchAssetBytes?(url: string): Promise<Uint8Array>;
 	install(manifestUrl: string): Promise<InstalledExtension>;
 	listInstalled(): Promise<InstalledExtension[]>;
 	setEnabled(extId: string, enabled: boolean): Promise<void>;

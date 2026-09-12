@@ -16,6 +16,7 @@ const RADIUS_PRESETS = [
   import { PanelSection } from "@recast/ui/panel-section";
   import { SliderRow } from "@recast/ui/slider-row";
   import { cn } from "@recast/ui/utils";
+  import { SWATCH_SELECTED } from "../selection";
 
   let { editor }: BorderControlProps = $props();
 </script>
@@ -26,15 +27,13 @@ const RADIUS_PRESETS = [
       {@const selected = editor.frame.radius === preset.value}
       <button
         type="button"
-        class="group/border flex flex-col items-center gap-1.5 outline-none"
+        class="group/border flex flex-col items-center gap-1.5 outline-none transition-transform motion-safe:active:scale-[0.98]"
         onclick={() => editor.patchFrame({ radius: preset.value })}
       >
         <span
           class={cn(
             "relative block aspect-square w-full overflow-hidden rounded-lg transition-shadow",
-            selected
-              ? "ring-foreground/60 ring-offset-card ring-2 ring-offset-1"
-              : "ring-border ring-1",
+            selected ? SWATCH_SELECTED : "ring-border ring-1",
           )}
           style="background:rgb(210,210,214);"
         >

@@ -8,7 +8,12 @@ import type { Annotation, AnnotationAnchor, EditorStore } from "../../stores/edi
 import { IDENTITY_ZOOM, withAlpha } from "./annotation-draw.logic";
 import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
 
-// An HTML layer so text gets the WebView's glyph rendering; export rasterizes each to a PNG, so Rust never sees fonts.
+/**
+ * An HTML layer so text gets the WebView's glyph rendering, including families no
+ * browser can hand the engine as bytes; the export rasterises each to a PNG, so
+ * the exported pixels are these pixels. The engine can shape text too, and does
+ * on the headless export path, where a font database resolves the family.
+ */
 
 interface Props {
 	store: EditorStore;
@@ -31,7 +36,7 @@ $effect(() => {
 
 let layerEl: HTMLDivElement | undefined = $state();
 let layerSize = $state({ w: 0, h: 0 });
-let editingId = $state<string | null>(null);
+
 // Pre-edit text, captured on entry so Escape can restore it.
 let editStartContent = "";
 let rafHandle: number | null = null;
@@ -143,8 +148,13 @@ onDestroy(() => {
 	if (rafHandle !== null) cancelAnimationFrame(rafHandle);
 });
 
-// `_frame` dependency forces re-derive on rAF ticks so position tracks playback/zoom.
-function styleFor(a: Annotation): string {
+/**
+ * The one owner of a text annotation's inline style. It must stay the only one:
+ * a `style:` directive alongside it silently strips its own property out of this
+ * string, even when the directive resolves to undefined.
+ * `_frame` forces a re-derive on rAF ticks so position tracks playback and zoom.
+ */
+function styleFor(a: Annotation, rank: number, isEditing: boolean): string {
 	if (a.kind.kind !== "text") return "";
 	void _frame;
 	const t = playbackTime();
@@ -161,7 +171,6 @@ function styleFor(a: Annotation): string {
 	// Size font and glow off the ANCHOR rect, not the layer: the export scales its comp-resolution raster into that rect, so layer-relative sizing drifted off the exported glyphs.
 	const rect = rectCssFor(a);
 	const fontSizePx = k.fontSize * rect.h;
-	const z = a.zIndex ?? 0;
 	// Glow becomes a CSS drop-shadow so the preview matches the exported text's draw_image_shadow.
 	const g = a.glow;
 	const glowFilter = g
@@ -173,17 +182,26 @@ function styleFor(a: Annotation): string {
 		`width: ${cssW}px`,
 		`min-height: ${cssH}px`,
 		`opacity: ${opacity}`,
-		`z-index: ${z}`,
+		// Its position in `annotationsByZ`, never the authored number: a raw z-index escapes this layer and stacks against the whole preview.
+		`z-index: ${rank}`,
 		`font-family: ${k.fontFamily}`,
 		`font-size: ${fontSizePx}px`,
 		`font-weight: ${k.fontWeight}`,
-		`color: ${k.color}`,
+		// Transparent, not hidden: the caret and the selection still need a box while the engine draws the glyphs.
+		`color: ${store.engineDrawsAnnotationText && !isEditing ? "transparent" : k.color}`,
 		`text-align: ${k.align}`,
 		`line-height: ${k.lineHeight}`,
+		`pointer-events: ${interactive(a) ? "auto" : "none"}`,
+		`touch-action: ${interactive(a) ? "none" : "auto"}`,
 		glowFilter,
 	]
 		.filter(Boolean)
 		.join(";");
+}
+
+// Text only takes the pointer on its own tab, so it cannot fight the canvas overlay.
+function interactive(a: Annotation): boolean {
+	return store.activePanel === "annotations" && !a.locked;
 }
 
 function startEditing(a: Annotation) {
@@ -191,7 +209,7 @@ function startEditing(a: Annotation) {
 	if (a.locked) return;
 	// Remember the pre-edit text for Escape, and defer undo to commit so a no-change edit pushes nothing.
 	editStartContent = a.kind.content;
-	editingId = a.id;
+	store.editingAnnotationId = a.id;
 	void tick().then(() => {
 		const el = document.querySelector(`[data-text-anno-id="${a.id}"]`) as HTMLElement | null;
 		if (el) {
@@ -209,7 +227,7 @@ function startEditing(a: Annotation) {
 function commitEditing(a: Annotation, el: HTMLElement) {
 	if (a.kind.kind !== "text") return;
 	const content = el.innerText.replace(/​/g, "");
-	editingId = null;
+	store.editingAnnotationId = null;
 	// Emptied text is dropped rather than left as an invisible layer the canvas hit-test can't select.
 	if (content.trim() === "") {
 		store.removeAnnotation(a.id);
@@ -232,7 +250,7 @@ function handleKeyDown(e: KeyboardEvent, a: Annotation) {
 }
 
 function handleTextPointerDown(e: PointerEvent, a: Annotation) {
-	if (editingId === a.id) return; // let contenteditable take the gesture
+	if (store.editingAnnotationId === a.id) return; // let contenteditable take the gesture
 	if (a.locked || a.kind.kind !== "text") return;
 	if (e.button !== 0) return;
 	// Text dragging only on the Annotations tab so it doesn't fight the canvas/focus overlay.
@@ -312,16 +330,16 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
 
 <div
   bind:this={layerEl}
-  class="pointer-events-none absolute inset-0 overflow-hidden"
+  class="pointer-events-none absolute inset-0 z-0 isolate overflow-hidden"
   class:hidden={store.annotationsGloballyHidden}
 >
-  {#each store.annotationsByZ as a (a.id)}
+  {#each store.annotationsByZ as a, rank (a.id)}
     {#if a.kind.kind === "text" && !a.hidden}
-      {@const isEditing = editingId === a.id}
+      {@const isEditing = store.editingAnnotationId === a.id}
       {@const isSelected = a.id === store.selectedAnnotationId}
       {@const isActiveTab = store.activePanel === "annotations"}
-      {@const interactive = isActiveTab && !a.locked}
       {@const isDragging = drag?.id === a.id && drag?.moved}
+      {@const canEdit = interactive(a)}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         data-text-anno-id={a.id}
@@ -331,21 +349,21 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
         class:outline-dashed={isSelected && isActiveTab && !isEditing}
         class:outline-primary={isSelected && isActiveTab}
         class:cursor-text={isEditing}
-        class:cursor-grab={interactive && !isEditing && !isDragging}
+        class:cursor-grab={canEdit && !isEditing && !isDragging}
         class:cursor-grabbing={isDragging}
         contenteditable={isEditing}
-        style={styleFor(a)}
+        style={styleFor(a, rank, isEditing)}
         onpointerdown={(e) => handleTextPointerDown(e, a)}
         onpointermove={(e) => handleTextPointerMove(e, a)}
         onpointerup={(e) => handleTextPointerUp(e, a)}
         onpointercancel={(e) => handleTextPointerUp(e, a)}
         ondblclick={(e) => {
-          if (!interactive) return;
+          if (!canEdit) return;
           e.stopPropagation();
           startEditing(a);
         }}
         onclick={(e) => {
-          if (!interactive) return;
+          if (!canEdit) return;
           if (isEditing) return;
           // Suppress the click that tails a successful drag.
           if (drag?.id === a.id && drag?.moved) {
@@ -357,8 +375,6 @@ function handleTextPointerUp(e: PointerEvent, a: Annotation) {
         }}
         onblur={(e) => commitEditing(a, e.currentTarget as HTMLElement)}
         onkeydown={(e) => handleKeyDown(e, a)}
-        style:pointer-events={interactive ? "auto" : "none"}
-        style:touch-action={interactive ? "none" : "auto"}
       >{a.kind.content}</div>
     {/if}
   {/each}

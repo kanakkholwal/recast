@@ -14,6 +14,7 @@ function engineStub() {
 		cameraLayerId: 4,
 		destroyed: false,
 		setScene: vi.fn(),
+		patchScene: vi.fn(),
 		setTimeMap: vi.fn(),
 		setSourceSize: vi.fn(),
 		setCanvasSize: vi.fn(),
@@ -54,12 +55,38 @@ beforeEach(() => {
 describe("scene sync", () => {
 	/** The caller runs this from an effect that fires on ANY store write, so an
 	 *  unchanged scene must not rebuild the evaluator and the time map. */
-	it("pushes a scene once and skips an identical one", async () => {
+	it("pushes the whole scene once, then only the fields that changed", async () => {
 		const d = await driver();
 		expect(d.syncScene(state(4))).toBe(true);
 		expect(d.syncScene(state(4))).toBe(false);
 		expect(d.syncScene(state(8))).toBe(true);
+		expect(engine.setScene).toHaveBeenCalledTimes(1);
+		expect(engine.patchScene).toHaveBeenCalledTimes(1);
+		expect(engine.patchScene).toHaveBeenLastCalledWith({ padding: 8 });
+	});
+
+	/** A compound field the store hands out by identity is not re-sent while that identity holds. */
+	it("compares compound fields by identity, so an untouched array costs nothing", async () => {
+		const d = await driver();
+		const cuts = [{ start: 1, end: 2 }];
+		d.syncScene({ padding: 4, cuts } as unknown as EditorRenderState);
+		expect(d.syncScene({ padding: 4, cuts } as unknown as EditorRenderState)).toBe(false);
+		expect(d.syncScene({ padding: 4, cuts: [...cuts] } as unknown as EditorRenderState)).toBe(true);
+		expect(engine.patchScene).toHaveBeenLastCalledWith({ cuts: [{ start: 1, end: 2 }] });
+	});
+
+	/** An engine that refuses a patch (nothing set yet, an older build) is sent the whole state next time. */
+	it("falls back to the whole scene after a refused patch", async () => {
+		const d = await driver();
+		const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		d.syncScene(state(4));
+		engine.patchScene.mockImplementationOnce(() => {
+			throw new Error("patch before any full state was set");
+		});
+		expect(d.syncScene(state(8))).toBe(false);
+		expect(d.syncScene(state(8))).toBe(true);
 		expect(engine.setScene).toHaveBeenCalledTimes(2);
+		error.mockRestore();
 	});
 
 	/** Thrown from the effect that calls this, a refused scene would strand the
