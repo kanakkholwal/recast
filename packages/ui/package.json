@@ -237,7 +237,7 @@
 		"@tabler/icons-svelte": "^3.46.0",
 		"bits-ui": "^2.19.0",
 		"clsx": "^2.1.1",
-		"dompurify": "^3.4.14",
+		"dompurify": "^3.4.15",
 		"marked": "^15.0.12",
 		"mode-watcher": "^1.1.0",
 		"svelte-sonner": "^1.2.1",
