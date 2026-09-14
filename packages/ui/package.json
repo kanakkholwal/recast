@@ -235,7 +235,7 @@
 	"dependencies": {
 		"@recast/icons": "workspace:*",
 		"@tabler/icons-svelte": "^3.46.0",
-		"bits-ui": "^2.19.0",
+		"bits-ui": "^2.19.2",
 		"clsx": "^2.1.1",
 		"dompurify": "^3.4.14",
 		"marked": "^15.0.12",
