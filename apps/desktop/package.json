@@ -76,7 +76,7 @@
 		"@tauri-apps/plugin-updater": "~2.10.1",
 		"@tauri-controls-v2/svelte": "^0.4.4",
 		"@unpic/svelte": "^1.0.1",
-		"bits-ui": "^2.19.0",
+		"bits-ui": "^2.19.2",
 		"clsx": "^2.1.1",
 		"mode-watcher": "^1.1.0",
 		"svelte-sonner": "^1.2.1"
