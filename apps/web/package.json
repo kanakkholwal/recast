@@ -42,7 +42,7 @@
 		"@sveltejs/vite-plugin-svelte": "^7.3.0",
 		"@tailwindcss/typography": "^0.5.20",
 		"@tailwindcss/vite": "^4.3.3",
-		"@types/node": "^22.20.2",
+		"@types/node": "^26.5.1",
 		"cloudinary": "^2.11.0",
 		"drizzle-kit": "^0.31.10",
 		"layerchart": "2.4.0",
