@@ -19,7 +19,7 @@ import {
 	findWorkspaceByPolarSubscription,
 	upsertSubscription,
 } from "$lib/billing/sync";
-import { getDb } from "$lib/db";
+import { getDb, lazyDb } from "$lib/db";
 import * as schema from "$lib/db/schema";
 import {
 	member as memberTable,
@@ -56,7 +56,7 @@ function createAuth() {
 				console[level](`[better-auth] ${message}${detail ? ` :: ${detail}` : ""}`);
 			},
 		},
-		database: drizzleAdapter(getDb(), { provider: "pg", schema }),
+		database: drizzleAdapter(lazyDb, { provider: "pg", schema }),
 		// Proxies terminate the client TCP connection, so without these the session ipAddress is the proxy's; most specific first.
 		advanced: {
 			ipAddress: {
