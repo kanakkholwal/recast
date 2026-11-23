@@ -30,6 +30,7 @@ import {
 import { sendTemplatedEmail } from "$lib/email";
 import { publicEnv } from "$lib/env/public";
 import { serverEnv } from "$lib/env/server";
+import { describeError } from "$lib/server/describe-error";
 
 /**
  * Better Auth instance — singleton, lazy-built on first request so the
@@ -48,6 +49,13 @@ function createAuth() {
 		secret: env.BETTER_AUTH_SECRET,
 		baseURL: env.BETTER_AUTH_URL ?? publicEnv().PUBLIC_APP_URL,
 		trustedOrigins: buildTrustedOrigins(),
+		// The default logger prints only the stack, which on Workers drops the message and cause (a bare "Failed to parse state").
+		logger: {
+			log: (level, message, ...args) => {
+				const detail = args.map(describeError).join(" | ");
+				console[level](`[better-auth] ${message}${detail ? ` :: ${detail}` : ""}`);
+			},
+		},
 		database: drizzleAdapter(getDb(), { provider: "pg", schema }),
 		// Proxies terminate the client TCP connection, so without these the session ipAddress is the proxy's; most specific first.
 		advanced: {
