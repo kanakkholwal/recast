@@ -1,12 +1,4 @@
-import {
-	boolean,
-	index,
-	integer,
-	pgTable,
-	text,
-	timestamp,
-	uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { organization } from "./organization";
 
 /**
@@ -82,34 +74,24 @@ export const session = pgTable(
 	(t) => [index("session_active_org_idx").on(t.activeOrganizationId)],
 );
 
-export const account = pgTable(
-	"account",
-	{
-		id: text("id").primaryKey(),
-		accountId: text("account_id").notNull(),
-		/**
-		 * Identity namespace the account key belongs to, required by better-auth
-		 * 1.7+: an OIDC issuer URL where the provider declares one
-		 * ("https://accounts.google.com"), else "local:oauth:<providerId>", and
-		 * "local:credential" for email/password rows.
-		 */
-		issuer: text("issuer").notNull(),
-		providerId: text("provider_id").notNull(),
-		userId: text("user_id")
-			.notNull()
-			.references(() => user.id, { onDelete: "cascade" }),
-		accessToken: text("access_token"),
-		refreshToken: text("refresh_token"),
-		idToken: text("id_token"),
-		accessTokenExpiresAt: timestamp("access_token_expires_at"),
-		refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
-		scope: text("scope"),
-		password: text("password"),
-		createdAt: timestamp("created_at").notNull().defaultNow(),
-		updatedAt: timestamp("updated_at").notNull().defaultNow(),
-	},
-	(t) => [uniqueIndex("account_issuer_account_id_idx").on(t.issuer, t.accountId)],
-);
+// better-auth 1.7.3+ never writes an `issuer` column (1.7.0-1.7.2 did); a NOT NULL one fails every account insert.
+export const account = pgTable("account", {
+	id: text("id").primaryKey(),
+	accountId: text("account_id").notNull(),
+	providerId: text("provider_id").notNull(),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, { onDelete: "cascade" }),
+	accessToken: text("access_token"),
+	refreshToken: text("refresh_token"),
+	idToken: text("id_token"),
+	accessTokenExpiresAt: timestamp("access_token_expires_at"),
+	refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+	scope: text("scope"),
+	password: text("password"),
+	createdAt: timestamp("created_at").notNull().defaultNow(),
+	updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
 
 export const verification = pgTable("verification", {
 	id: text("id").primaryKey(),
